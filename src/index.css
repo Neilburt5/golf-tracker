@@ -1,0 +1,52 @@
+:root {
+  --bg: #0b3d2e;
+  --fg: #ffffff;
+  --accent: #ffd54a;
+  box-sizing: border-box;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+*, *::before, *::after { box-sizing: inherit; }
+
+html, body, #root { height: 100%; margin: 0; background: var(--bg); }
+
+.app { padding: 24px; text-align: center; }
+h1 { font-size: 2rem; margin: 24px 0 4px; }
+.subtitle { opacity: 0.8; margin: 0 0 24px; }
+.status { font-size: 1.25rem; font-weight: 700; }
+.status.online { color: #7dff9b; }
+.status.offline { color: var(--accent); }
+.build { font-size: 0.8rem; opacity: 0.7; }
+
+.banner {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 16px;
+  background: #ffffff;
+  color: #111;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.banner span { flex: 1; font-weight: 600; }
+.banner button {
+  min-height: 44px;
+  padding: 0 16px;
+  font-size: 1rem;
+  font-weight: 700;
+  border: 0;
+  border-radius: 10px;
+  background: var(--bg);
+  color: #fff;
+}
+.banner button.secondary { background: #e3e3e3; color: #111; }
