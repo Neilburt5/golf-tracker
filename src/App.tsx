@@ -7,7 +7,7 @@ export default function App() {
   return (
     <main className="app">
       <h1>Golf Tracker</h1>
-      <p className="subtitle">Fase 1: PWA vacía</p>
+      <p className="subtitle">Fase 1: prueba de actualización</p>
 
       <p className={online ? 'status online' : 'status offline'}>
         {online ? 'Con conexión' : 'Sin conexión'}
