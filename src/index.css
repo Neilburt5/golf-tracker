@@ -16,13 +16,73 @@
 
 html, body, #root { height: 100%; margin: 0; background: var(--bg); }
 
-.app { padding: 24px; text-align: center; }
-h1 { font-size: 2rem; margin: 24px 0 4px; }
-.subtitle { opacity: 0.8; margin: 0 0 24px; }
-.status { font-size: 1.25rem; font-weight: 700; }
+.app { padding: 20px; max-width: 520px; margin: 0 auto; }
+.screen { display: flex; flex-direction: column; gap: 20px; }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.title { font-size: 2rem; margin: 16px 0 0; }
+.muted { opacity: 0.8; margin: 0; }
+.error { color: var(--accent); font-weight: 700; margin: 0; }
+
+.status { font-size: 1rem; font-weight: 700; }
 .status.online { color: #7dff9b; }
 .status.offline { color: var(--accent); }
-.build { font-size: 0.8rem; opacity: 0.7; }
+.build { font-size: 0.8rem; opacity: 0.7; margin: 0; }
+.footer { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
+
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 64px;
+  padding: 0 20px;
+  font-size: 1.25rem;
+  font-weight: 800;
+  text-decoration: none;
+  text-align: center;
+  border-radius: 14px;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+.btn-primary { background: var(--accent); color: #111; }
+.btn-secondary { background: transparent; color: var(--fg); border-color: rgba(255, 255, 255, 0.6); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  font-size: 1.1rem;
+}
+
+.field { border: 0; margin: 0; padding: 0; }
+.field legend { font-size: 0.9rem; font-weight: 700; opacity: 0.85; padding: 0; margin-bottom: 8px; }
+button { font: inherit; color: inherit; -webkit-appearance: none; appearance: none; }
+a.btn-primary, a.btn-primary:visited { color: #111; }
+a.btn-secondary, a.btn-secondary:visited { color: var(--fg); }
+
+
+
+.options { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+.option {
+  min-height: 60px;
+  padding: 0 12px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--fg);
+  background: transparent;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-radius: 12px;
+  cursor: pointer;
+}
+.option[aria-pressed='true'] {
+  background: var(--accent);
+  color: #111;
+  border-color: var(--accent);
+}
+.option[aria-pressed='true']::before { content: '✓ '; }
 
 .banner {
   position: fixed;
