@@ -1,0 +1,29 @@
+[
+  {
+    "id": "retamares-18",
+    "name": "Club de Golf Retamares",
+    "location": "Alalpardo, Madrid",
+    "numberOfHoles": 18,
+    "tees": ["Blancas", "Amarillas", "Azules", "Rojas"],
+    "holes": [
+      { "number": 1, "par": 4 },
+      { "number": 2, "par": 3 },
+      { "number": 3, "par": 5 },
+      { "number": 4, "par": 4 },
+      { "number": 5, "par": 4 },
+      { "number": 6, "par": 4 },
+      { "number": 7, "par": 5 },
+      { "number": 8, "par": 4 },
+      { "number": 9, "par": 3 },
+      { "number": 10, "par": 5 },
+      { "number": 11, "par": 4 },
+      { "number": 12, "par": 3 },
+      { "number": 13, "par": 5 },
+      { "number": 14, "par": 4 },
+      { "number": 15, "par": 4 },
+      { "number": 16, "par": 4 },
+      { "number": 17, "par": 3 },
+      { "number": 18, "par": 4 }
+    ]
+  }
+]
