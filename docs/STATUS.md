@@ -14,7 +14,7 @@ V0.1 (in progress)
 - [x] 1. Environment, repo and deployment
 - [x] 2. Domain and tests
 - [x] 3. Data layer
-- [ ] 4. UI skeleton (Home, New round)
+- [x] 4. UI skeleton (Home, New round)
 - [ ] 5. Hole tracking screen
 - [ ] 6. Summary and finish round
 - [ ] 7. Excel export and JSON backup
@@ -62,13 +62,21 @@ V0.1 (in progress)
   - `navigator.storage.persist()` request: verify it exists in `main.tsx`; add it if not.
   - `crypto.randomUUID()` needs a secure context (HTTPS or localhost). Over a LAN IP on the iPhone, creating a round will fail; test saving on the deployed site, or add a UUID fallback.
 
+## Phase 4 results (UI skeleton)
+
+- Added dependency: `react-router-dom` (HashRouter). Routes: `/`, `/new`, `/round/:roundId/hole/:holeNumber` (placeholder).
+- Home: "Continuar ronda" (if in progress) + "Nueva ronda"; keeps online status and build time from phase 1.
+- New Round: course, tee, range (full / front / back); warns if a round is already in progress; the old round is NOT deleted.
+- Added `domain/resume.ts` + 5 tests.
+- Pending: phase 5 hole screen (fairway null on par 3, validation mode); `listRounds` / delete flow for orphaned in-progress rounds (phase 7 or V0.2); the summary route does not exist yet.
+
 ## Environment
 
 - OS: Windows (no Mac)
 - Editor: VS Code
 - Project folder: `C:\golf-tracker\golf-tracker`
-- Repo: `golf-tracker` (GitHub) — _add URL_
-- Deployed URL: _add GitHub Pages URL_
+- Repo: `golf-tracker` (GitHub) — "https://neilburt5.github.io/golf-tracker/"
+- Deployed URL: "https://github.com/Neilburt5/golf-tracker/settings/pages"
 
 ## Open problems
 
