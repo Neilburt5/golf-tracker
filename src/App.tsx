@@ -1,21 +1,21 @@
+import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { UpdatePrompt } from './components/UpdatePrompt'
-import { useOnlineStatus } from './hooks/useOnlineStatus'
+import { HoleTracking } from './pages/HoleTracking'
+import { Home } from './pages/Home'
+import { NewRound } from './pages/NewRound'
 
 export default function App() {
-  const online = useOnlineStatus()
-
   return (
-    <main className="app">
-      <h1>Golf Tracker</h1>
-      <p className="subtitle">Fase 1: prueba de actualización</p>
-
-      <p className={online ? 'status online' : 'status offline'}>
-        {online ? 'Con conexión' : 'Sin conexión'}
-      </p>
-
-      <p className="build">Build: {__BUILD_TIME__}</p>
-
+    <HashRouter>
+      <main className="app">
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/new" element={<NewRound />} />
+          <Route path="/round/:roundId/hole/:holeNumber" element={<HoleTracking />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </main>
       <UpdatePrompt />
-    </main>
+    </HashRouter>
   )
 }
