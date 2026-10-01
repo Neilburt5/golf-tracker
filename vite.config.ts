@@ -1,9 +1,13 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // `base` must match the GitHub repository name.
 export default defineConfig({
+  test: {
+  include: ['tests/**/*.test.ts'],
+},
   base: '/golf-tracker/',
   define: {
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
