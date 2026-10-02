@@ -7,6 +7,7 @@ import { YesNoToggle } from '../components/YesNoToggle';
 import { holeScoreToPar } from '../domain/calculations';
 import type { ValidationError } from '../domain/validation';
 import { useHoleForm, type SaveStatus } from '../hooks/useHoleForm';
+import { formatToPar } from '../domain/format';
 
 const SAVE_STATUS_TEXT: Record<SaveStatus, string> = {
   saved: 'Guardado ✓',
@@ -21,12 +22,6 @@ function errorMessage(error: ValidationError): string {
     default:
       return 'Revisa los datos del hoyo.';
   }
-}
-
-function formatToPar(value: number | null): string | undefined {
-  if (value === null) return undefined;
-  if (value === 0) return 'Par';
-  return value > 0 ? `+${value}` : `${value}`;
 }
 
 export function HoleTracking() {
