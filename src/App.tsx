@@ -13,9 +13,8 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/new" element={<NewRound />} />
           <Route path="/round/:roundId/hole/:holeNumber" element={<HoleTracking />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-          <Route path="/round/:roundId/hole/:holeNumber" element={<HoleTracking />} />
           <Route path="/round/:roundId/summary" element={<RoundSummary />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
       <UpdatePrompt />
