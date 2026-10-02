@@ -109,3 +109,14 @@ Format: **Decision**, **Reason**, and alternatives where relevant.
 ## Open items
 
 - SheetJS: verify the currently recommended installation method (the npm registry package has been outdated). Fallback: ExcelJS.
+## D13 — Resume hole is derived, not stored
+
+**Decision:** "Continue round" opens the first hole without a saved score, or the last hole if all have one (`domain/resume.ts`).
+
+**Reason:** Avoids a stored "current hole" that could go stale; consistent with D5. Limitation: if the user goes back to edit an earlier hole and closes the app, Continue still opens the first unplayed hole.
+
+## D14 — Hole range as a single control
+
+**Decision:** New Round offers "18 holes / Front nine / Back nine" (only "9 holes" on a 9-hole course) instead of separate 9/18 and which-nine controls.
+
+**Reason:** One tap, and "back nine on a 9-hole course" is impossible by construction.

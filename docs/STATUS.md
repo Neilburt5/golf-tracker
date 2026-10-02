@@ -6,7 +6,7 @@ _Paste this file at the start of every new conversation, together with the files
 V0.1 (in progress)
 
 ## Current phase
-**Phase 4 — UI skeleton: Home and New Round** (next up)
+Phase 5 — Hole tracking screen (next up)
 
 ## Phases
 
@@ -69,6 +69,7 @@ V0.1 (in progress)
 - New Round: course, tee, range (full / front / back); warns if a round is already in progress; the old round is NOT deleted.
 - Added `domain/resume.ts` + 5 tests.
 - Pending: phase 5 hole screen (fairway null on par 3, validation mode); `listRounds` / delete flow for orphaned in-progress rounds (phase 7 or V0.2); the summary route does not exist yet.
+- Fix after iPhone test: links styled as buttons showed Safari's purple `:visited` colour; added explicit `a.btn-*:visited` rules, 12px gap between options and a yellow + ✓ selected state. Tested on the deployed site: OK.
 
 ## Environment
 
@@ -84,4 +85,4 @@ V0.1 (in progress)
 
 ## Next conversation template
 
-> We are in phase 4 (UI skeleton: Home and New Round). Phase 3 is done. I attach PROMPT.md and STATUS.md. Goal: implement the Home and New Round screens with HashRouter routes, using the existing `roundRepository` and `courseRepository`. Follow section 23 of the prompt. Spanish UI.
+> We are in phase 5 (Hole tracking screen). Phase 4 is done. I attach PROMPT.md and STATUS.md. Goal: implement the hole tracking screen (the most important screen of the app) with autosave, back/forward navigation and progress indicator, using the existing `roundRepository` and the domain validation. Follow section 23 of the prompt. Spanish UI.

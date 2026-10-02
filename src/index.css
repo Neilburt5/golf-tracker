@@ -110,3 +110,63 @@ a.btn-secondary, a.btn-secondary:visited { color: var(--fg); }
   color: #fff;
 }
 .banner button.secondary { background: #e3e3e3; color: #111; }
+/* ---- Hole tracking (phase 5) ---- */
+.hole-header { display: flex; justify-content: space-between; align-items: flex-end; }
+.hole-meta { display: flex; flex-direction: column; align-items: flex-end; font-size: 1.1rem; }
+
+.progress { display: grid; grid-template-columns: repeat(9, 1fr); gap: 6px; }
+.dot {
+  min-height: 40px;
+  padding: 0;
+  font-weight: 700;
+  color: var(--fg);
+  background: transparent;
+  border: 2px dashed rgba(255, 255, 255, 0.4);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.dot-played { border-style: solid; border-color: #7dff9b; background: rgba(255, 255, 255, 0.15); }
+.dot-current { background: var(--accent); color: #111; border-color: var(--accent); border-style: solid; }
+
+.stepper-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.stepper-label { display: flex; flex-direction: column; font-size: 1.15rem; font-weight: 700; }
+.stepper-label small { font-size: 1rem; color: var(--accent); }
+.stepper-controls { display: flex; align-items: center; gap: 8px; }
+.stepper-btn {
+  width: 72px;
+  height: 64px;
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--fg);
+  background: transparent;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-radius: 12px;
+  cursor: pointer;
+}
+.stepper-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.stepper-value { min-width: 52px; text-align: center; font-size: 2.4rem; font-weight: 800; }
+
+.toggle-options { display: grid; gap: 10px; }
+
+.actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 0 4px;
+  background: var(--bg);
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+.actions-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.save-status { display: flex; justify-content: space-between; align-items: center; font-weight: 700; }
+.save-status span { margin: 0; }
+.link-btn {
+  min-height: 44px;
+  padding: 0 12px;
+  font-weight: 700;
+  color: var(--accent);
+  background: transparent;
+  border: 2px solid var(--accent);
+  border-radius: 10px;
+}
