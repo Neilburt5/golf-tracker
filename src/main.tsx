@@ -6,6 +6,9 @@ import './index.css'
 
 void requestPersistentStorage()
 
+if (navigator.storage?.persist) {
+  void navigator.storage.persist();
+}
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
