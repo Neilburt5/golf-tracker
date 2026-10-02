@@ -65,3 +65,8 @@ export interface RoundStats {
   upAndDownPercentage: number | null;
   threePutts: number;
 }
+/** A round together with all of its holes. Used by the rounds list and by backups. */
+export interface RoundWithHoles {
+  round: Round;
+  holes: Hole[];
+}
