@@ -6,7 +6,7 @@ _Paste this file at the start of every new conversation, together with the files
 V0.1 (in progress)
 
 ## Current phase
-Phase 5 — Hole tracking screen (next up)
+Phase 7 — Excel export and JSON backup (next up)
 
 ## Phases
 
@@ -15,8 +15,8 @@ Phase 5 — Hole tracking screen (next up)
 - [x] 2. Domain and tests
 - [x] 3. Data layer
 - [x] 4. UI skeleton (Home, New round)
-- [ ] 5. Hole tracking screen
-- [ ] 6. Summary and finish round
+- [x] 5. Hole tracking screen
+- [x] 6. Summary and finish round
 - [ ] 7. Excel export and JSON backup
 - [ ] 8. Polish and real-round test
 
@@ -71,13 +71,36 @@ Phase 5 — Hole tracking screen (next up)
 - Pending: phase 5 hole screen (fairway null on par 3, validation mode); `listRounds` / delete flow for orphaned in-progress rounds (phase 7 or V0.2); the summary route does not exist yet.
 - Fix after iPhone test: links styled as buttons showed Safari's purple `:visited` colour; added explicit `a.btn-*:visited` rules, 12px gap between options and a yellow + ✓ selected state. Tested on the deployed site: OK.
 
+## Phase 5 results
+feat: add stepper, yes/no toggle and hole progress components
+feat: add useHoleForm hook with autosave
+feat: add hole tracking screen
+refactor: use BigButton in hole tracking screen
+fix: derive load state and error message instead of setState in effects
+docs: update status for phase 5
+
+## Phase 6 results (summary and finish round)
+
+- Added `unplayedHoles` to `domain/calculations.ts`, `domain/format.ts` (`formatToPar`, `formatPercentage`), `hooks/useRoundSummary.ts`, and the real `pages/RoundSummary.tsx`. 4 new tests in `tests/summary.test.ts`.
+- Removed the duplicated hole route in `App.tsx`; `formatToPar` moved from `HoleTracking` to `domain/format.ts`.
+- Switched to a light, high-contrast theme (white background, black buttons, yellow/orange warnings). Colours are variables in `:root` of `index.css`.
+- Choices made in phase 6:
+  - Summary shows totals from `calculateRoundStats`, a list of holes (each one links to its hole to correct it) and "Finalizar ronda".
+  - Finishing with unplayed holes is allowed after an inline confirmation that names them (no `window.confirm`).
+  - **Finished rounds stay editable in V0.1** (totals are derived). An explicit lock/unlock is revisited with History in V0.2.
+- Pending for later phases:
+  - Phase 7: a finished round is only reachable from its own summary. Add a minimal `listRounds` + round list to open, export and delete (with confirmation) any round, including abandoned in-progress ones.
+  - Phase 7: Excel export button on the summary.
+  - Phase 8: `theme_color` / `background_color` in the manifest and `<meta name="theme-color">` still use the old green; check `.muted` contrast in sunlight.
+  - `crypto.randomUUID()` still needs a secure context (only matters when testing over LAN IP).
+
 ## Environment
 
 - OS: Windows (no Mac)
 - Editor: VS Code
 - Project folder: `C:\golf-tracker\golf-tracker`
-- Repo: `golf-tracker` (GitHub) — "https://neilburt5.github.io/golf-tracker/"
-- Deployed URL: "https://github.com/Neilburt5/golf-tracker/settings/pages"
+- Repo: https://github.com/Neilburt5/golf-tracker
+- Deployed URL: https://neilburt5.github.io/golf-tracker/
 
 ## Open problems
 
@@ -85,4 +108,4 @@ Phase 5 — Hole tracking screen (next up)
 
 ## Next conversation template
 
-> We are in phase 5 (Hole tracking screen). Phase 4 is done. I attach PROMPT.md and STATUS.md. Goal: implement the hole tracking screen (the most important screen of the app) with autosave, back/forward navigation and progress indicator, using the existing `roundRepository` and the domain validation. Follow section 23 of the prompt. Spanish UI.
+> We are in phase 7 (Excel export and JSON backup). Phase 6 is done. I attach the project files. Goal: (1) add `listRounds` and a minimal rounds list screen to open any round (also finished ones) and delete with confirmation; (2) `services/excelExport.ts` with sheets ROUND and HOLES (section 16 of the prompt), unit-tested row generation, and `shareFile.ts` (navigator.share with download fallback); (3) JSON backup/restore in `services/backup.ts` without silently overwriting existing rounds; (4) export button on the summary. Verify the currently recommended way to install SheetJS first (ExcelJS is the fallback). Follow section 23 of the prompt. Spanish UI.

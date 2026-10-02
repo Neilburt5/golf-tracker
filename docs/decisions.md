@@ -120,3 +120,19 @@ Format: **Decision**, **Reason**, and alternatives where relevant.
 **Decision:** New Round offers "18 holes / Front nine / Back nine" (only "9 holes" on a 9-hole course) instead of separate 9/18 and which-nine controls.
 
 **Reason:** One tap, and "back nine on a 9-hole course" is impossible by construction.
+
+---
+
+## D13 — Finished rounds stay editable in V0.1
+
+**Decision:** A finished round can still be corrected from its summary.
+
+**Reason:** Totals are derived, so corrections are always consistent, and fixing a typo after the round is a real need. An explicit lock/unlock is revisited with History in V0.2.
+
+---
+
+## D14 — Finishing with unplayed holes is allowed after confirmation
+
+**Decision:** The confirmation names the holes without score; they do not count in statistics.
+
+**Reason:** Blocking would force inventing data; silently allowing it would hide a mistake.
