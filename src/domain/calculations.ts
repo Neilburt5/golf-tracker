@@ -7,6 +7,11 @@ export function isPlayed(hole: Hole): hole is PlayedHole {
   return hole.score !== null;
 }
 
+/** Holes that still have no saved score, in the order given. */
+export function unplayedHoles(holes: readonly Hole[]): Hole[] {
+  return holes.filter((h) => !isPlayed(h));
+}
+
 /** Suggested GIR: reached the green in (par - 2) strokes or fewer. */
 export function suggestGir(score: number, putts: number, par: number): boolean {
   return score - putts <= par - 2;
