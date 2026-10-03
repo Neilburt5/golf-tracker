@@ -106,14 +106,15 @@ Format: **Decision**, **Reason**, and alternatives where relevant.
 
 ---
 
-## Open items
-
-- SheetJS: verify the currently recommended installation method (the npm registry package has been outdated). Fallback: ExcelJS.
 ## D13 — Resume hole is derived, not stored
 
 **Decision:** "Continue round" opens the first hole without a saved score, or the last hole if all have one (`domain/resume.ts`).
 
-**Reason:** Avoids a stored "current hole" that could go stale; consistent with D5. Limitation: if the user goes back to edit an earlier hole and closes the app, Continue still opens the first unplayed hole.
+**Reason:** Avoids a stored "current hole" that could go stale; consistent with D5.
+
+**Limitation:** If the user goes back to edit an earlier hole and closes the app, Continue still opens the first unplayed hole.
+
+---
 
 ## D14 — Hole range as a single control
 
@@ -123,7 +124,7 @@ Format: **Decision**, **Reason**, and alternatives where relevant.
 
 ---
 
-## D13 — Finished rounds stay editable in V0.1
+## D15 — Finished rounds stay editable in V0.1
 
 **Decision:** A finished round can still be corrected from its summary.
 
@@ -131,8 +132,60 @@ Format: **Decision**, **Reason**, and alternatives where relevant.
 
 ---
 
-## D14 — Finishing with unplayed holes is allowed after confirmation
+## D16 — Finishing with unplayed holes is allowed after confirmation
 
 **Decision:** The confirmation names the holes without score; they do not count in statistics.
 
 **Reason:** Blocking would force inventing data; silently allowing it would hide a mistake.
+
+---
+
+## D17 — SheetJS is vendored from the SheetJS CDN
+
+**Decision:** SheetJS 0.20.3 is installed from a tarball committed to `vendor/` (`"xlsx": "file:vendor/xlsx-0.20.3.tgz"`). Only `utils`, `write` and `read` are imported (named imports).
+
+**Reason:** The `xlsx` package on the npm registry is outdated (0.18.5); the SheetJS CDN is the authoritative source. Vendoring keeps the GitHub Actions build independent of the CDN and is what the SheetJS docs recommend for stability.
+
+**Trade-offs:** Updating SheetJS means downloading a new tarball by hand. The library makes the main bundle about 720 kB (about 233 kB gzipped), which triggers Vite's chunk-size warning. It is downloaded once and precached for offline use; code-splitting was rejected because the library would have to load before the tap handler runs (see D21).
+
+**Alternative considered:** ExcelJS (not needed).
+
+---
+
+## D18 — Export contents: played holes only, percentages 0-100
+
+**Decision:** The HOLES sheet has one row per played hole (holes with a saved score). The ROUND row uses the same played holes. Percentages are 0-100, unrounded, and an empty cell when there is nothing to divide by. Dates are text `YYYY-MM-DD` in local time.
+
+**Reason:** Consistent with the statistics rule from phase 2. Rows for unplayed holes would be full of empty cells that look like data. Text dates do not depend on the locale of Excel, and pandas/Power BI parse them without trouble.
+
+---
+
+## D19 — Backup restore never overwrites and validates before writing
+
+**Decision:** A backup is `{ app, schemaVersion, exportedAt, rounds: [{ round, holes }] }`. Restoring first validates the whole file (`parseBackup`, unknown fields dropped), then inserts round by round. A round whose id already exists is skipped, never overwritten. Each round is written in one transaction, so a failing round leaves nothing behind and does not stop the others. The UI reports imported / already existed / failed.
+
+**Reason:** Golf data is a long-term asset (prompt section 20). A restore must never destroy newer edits, and a damaged or foreign file must never leave half a round in the database.
+
+**Limitation:** Restoring an `in_progress` round makes it a candidate for "Continue round" (the most recently updated one wins).
+
+---
+
+## D20 — Rounds list with inline-confirmed deletion
+
+**Decision:** `/rounds` lists every round, newest first, and is the only place where rounds are deleted. Deleting needs an inline confirmation that names the round, warns that it cannot be undone and suggests a backup first. No `window.confirm`.
+
+**Reason:** Prompt section 20: never silently delete data, confirm destructive actions. It also gives access to finished and abandoned in-progress rounds that were unreachable before. The inline pattern matches "Finalizar ronda".
+
+---
+
+## D21 — Files are built synchronously and shared straight from the tap
+
+**Decision:** `createExcelFile` and `createBackupFile` are synchronous and work on data already in memory. The tap handler calls `shareFile` without awaiting anything first. `shareFile` uses `navigator.share` with a file when `canShare` allows it, treats closing the share sheet (`AbortError`) as "cancelled" (no download), and falls back to a download on any other failure.
+
+**Reason:** iOS Safari only opens the share sheet while the tap is still a fresh user gesture; awaiting a database read first can make it fail. The fallback guarantees an export is never lost silently.
+
+---
+
+## Open items
+
+- (none)

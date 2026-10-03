@@ -6,7 +6,7 @@ _Paste this file at the start of every new conversation, together with the files
 V0.1 (in progress)
 
 ## Current phase
-Phase 7 — Excel export and JSON backup (next up)
+Phase 8 — Polish and real-round test (next up)
 
 ## Phases
 
@@ -17,7 +17,7 @@ Phase 7 — Excel export and JSON backup (next up)
 - [x] 4. UI skeleton (Home, New round)
 - [x] 5. Hole tracking screen
 - [x] 6. Summary and finish round
-- [ ] 7. Excel export and JSON backup
+- [x] 7. Excel export and JSON backup
 - [ ] 8. Polish and real-round test
 
 ## Key decisions (see docs/decisions.md)
@@ -49,50 +49,43 @@ Phase 7 — Excel export and JSON backup (next up)
   - Repositories are factories (`createRoundRepository(db, clock)`) so tests use an isolated database and a deterministic clock; the app uses the default instances.
   - All hole rows are created when the round is created (`score: null` = not yet saved), in one transaction with the round.
   - Initial hole values: `fairway` is `null` on par 3 and `false` otherwise; `upAndDown` is `null`; everything else `0`/`false`.
-  - `saveHole` overwrites an existing hole and bumps `Round.updatedAt`. It does NOT validate; the hook decides the validation mode (phase 5).
-  - `createRound` rejects an unknown tee and a hole range that doesn't fit the course (e.g. back nine on a 9-hole course), writing nothing.
+  - `saveHole` overwrites an existing hole and bumps `Round.updatedAt`. It does NOT validate; the hook decides the validation mode.
+  - `createRound` rejects an unknown tee and a hole range that doesn't fit the course, writing nothing.
   - `courses.json` is validated at load (`validateCourses`): unique ids, 9/18 holes, consecutive hole numbers, par 3-6, at least one tee.
-  - `finishRound` is idempotent and allows unplayed holes. **Decision:** the summary screen WARNS about holes without score (e.g. "3 holes without score") but does not block finishing.
+  - `finishRound` is idempotent and allows unplayed holes (see D16).
   - `getInProgressRound` returns the most recently updated in-progress round.
-- Pending for later phases:
-  - Phase 4: block "back nine" for 9-hole courses in the New Round UI (the repository also rejects it).
-  - Phase 5: set `fairway` to `null` on par 3 in the hole screen/hook; choose validation mode on autosave vs "Save & next".
-  - Phase 6: unplayed-holes warning before finishing.
-  - Phase 7: `listRounds` and JSON backup/restore (not implemented yet); `deleteRound` only with a confirmation flow, when needed.
-  - `navigator.storage.persist()` request: verify it exists in `main.tsx`; add it if not.
-  - `crypto.randomUUID()` needs a secure context (HTTPS or localhost). Over a LAN IP on the iPhone, creating a round will fail; test saving on the deployed site, or add a UUID fallback.
+- `crypto.randomUUID()` needs a secure context (HTTPS or localhost). Over a LAN IP on the iPhone, creating a round will fail; test saving on the deployed site, or add a UUID fallback.
 
 ## Phase 4 results (UI skeleton)
 
-- Added dependency: `react-router-dom` (HashRouter). Routes: `/`, `/new`, `/round/:roundId/hole/:holeNumber` (placeholder).
+- Added dependency: `react-router-dom` (HashRouter).
 - Home: "Continuar ronda" (if in progress) + "Nueva ronda"; keeps online status and build time from phase 1.
 - New Round: course, tee, range (full / front / back); warns if a round is already in progress; the old round is NOT deleted.
 - Added `domain/resume.ts` + 5 tests.
-- Pending: phase 5 hole screen (fairway null on par 3, validation mode); `listRounds` / delete flow for orphaned in-progress rounds (phase 7 or V0.2); the summary route does not exist yet.
 - Fix after iPhone test: links styled as buttons showed Safari's purple `:visited` colour; added explicit `a.btn-*:visited` rules, 12px gap between options and a yellow + ✓ selected state. Tested on the deployed site: OK.
 
-## Phase 5 results
-feat: add stepper, yes/no toggle and hole progress components
-feat: add useHoleForm hook with autosave
-feat: add hole tracking screen
-refactor: use BigButton in hole tracking screen
-fix: derive load state and error message instead of setState in effects
-docs: update status for phase 5
+## Phase 5 results (hole tracking)
+
+- Stepper, YesNoToggle and HoleProgress components, `useHoleForm` hook with debounced, ordered autosave (flush on `visibilitychange` / `pagehide`), and the hole tracking screen.
+- Fairway is forced to `null` on par 3; autosave validates with `requireScore: false`, "Save & next" with `requireScore: true`.
 
 ## Phase 6 results (summary and finish round)
 
-- Added `unplayedHoles` to `domain/calculations.ts`, `domain/format.ts` (`formatToPar`, `formatPercentage`), `hooks/useRoundSummary.ts`, and the real `pages/RoundSummary.tsx`. 4 new tests in `tests/summary.test.ts`.
-- Removed the duplicated hole route in `App.tsx`; `formatToPar` moved from `HoleTracking` to `domain/format.ts`.
-- Switched to a light, high-contrast theme (white background, black buttons, yellow/orange warnings). Colours are variables in `:root` of `index.css`.
-- Choices made in phase 6:
-  - Summary shows totals from `calculateRoundStats`, a list of holes (each one links to its hole to correct it) and "Finalizar ronda".
-  - Finishing with unplayed holes is allowed after an inline confirmation that names them (no `window.confirm`).
-  - **Finished rounds stay editable in V0.1** (totals are derived). An explicit lock/unlock is revisited with History in V0.2.
-- Pending for later phases:
-  - Phase 7: a finished round is only reachable from its own summary. Add a minimal `listRounds` + round list to open, export and delete (with confirmation) any round, including abandoned in-progress ones.
-  - Phase 7: Excel export button on the summary.
-  - Phase 8: `theme_color` / `background_color` in the manifest and `<meta name="theme-color">` still use the old green; check `.muted` contrast in sunlight.
-  - `crypto.randomUUID()` still needs a secure context (only matters when testing over LAN IP).
+- `unplayedHoles` in `domain/calculations.ts`, `domain/format.ts` (`formatToPar`, `formatPercentage`), `hooks/useRoundSummary.ts`, and the real `pages/RoundSummary.tsx`. 4 new tests in `tests/summary.test.ts`.
+- Light, high-contrast theme (white background, black buttons, yellow/orange warnings). Colours are variables in `:root` of `index.css`.
+- Finishing with unplayed holes is allowed after an inline confirmation that names them (D16). Finished rounds stay editable (D15).
+
+## Phase 7 results (Excel export, rounds list, JSON backup)
+
+- Added dependency: SheetJS 0.20.3, vendored in `vendor/` (D17). Verified against the SheetJS docs: the npm registry copy is outdated.
+- Data layer: `listRoundsWithHoles`, `deleteRound`, `importRound` in `roundRepository.ts`; `RoundWithHoles` type in the domain. Schema unchanged (v1).
+- Services: `filenames.ts` (slug, local date), `excelExport.ts` (pure row builders + workbook + file), `shareFile.ts` (injectable decision logic, real browser wiring on top), `backup.ts` (create, strict `parseBackup`, `restoreBackup`).
+- UI: `/rounds` screen (`pages/Rounds.tsx`, `hooks/useRounds.ts`) with open, inline-confirmed delete, "Guardar copia" and "Restaurar copia"; "Mis rondas" link on Home; "Exportar a Excel" button on the summary.
+- Removed the duplicate `navigator.storage.persist()` call from `main.tsx`; `services/storagePersistence.ts` is the single place.
+- `docs/decisions.md`: duplicated D13/D14 renumbered (now D13-D16); D17-D21 added for this phase.
+- 134 Vitest tests passing. `tsc -b` and `npm run lint` clean. Export and backup/restore checked manually on the desktop browser (xlsx opens in Excel with correct sheets, totals and empty cells; backup restore skips existing rounds).
+- Choices made in phase 7: see D17-D21. In short: only played holes are exported, restore never overwrites, delete is always confirmed, files are built synchronously so the iOS share sheet keeps the tap gesture.
+- `npm run build` warns that the main chunk is over 500 kB (about 723 kB, 233 kB gzipped) because of SheetJS. Expected and harmless (precached for offline use).
 
 ## Environment
 
@@ -104,8 +97,19 @@ docs: update status for phase 5
 
 ## Open problems
 
-- (none)
+- Phase 7 has NOT yet been tested on the iPhone: share sheet with the `.xlsx` and the `.json` backup, and restoring a backup from the Files app. This is the first thing to verify after pushing.
+
+## Pending for phase 8
+
+- iPhone checks on the deployed site: share sheet for Excel and backup, restore from Files, offline behaviour of the new screens, "new version available" prompt after the deploy.
+- Real-round test on a course: speed of entry (target 10-15 s per hole), one-hand use, outdoor readability.
+- `theme_color` / `background_color` in the manifest and `<meta name="theme-color">` still use the old green; align with the light theme.
+- Check `.muted` contrast in sunlight.
+- Decide whether to silence the chunk-size warning (`build.chunkSizeWarningLimit`) and document why (D17).
+- `crypto.randomUUID()` still needs a secure context (only matters when testing over a LAN IP); optional fallback.
+- Known limitation (D13): Continue round opens the first unplayed hole even after editing an earlier one.
+- Known limitation (D19): restoring an in-progress round can change which round "Continue round" opens.
 
 ## Next conversation template
 
-> We are in phase 7 (Excel export and JSON backup). Phase 6 is done. I attach the project files. Goal: (1) add `listRounds` and a minimal rounds list screen to open any round (also finished ones) and delete with confirmation; (2) `services/excelExport.ts` with sheets ROUND and HOLES (section 16 of the prompt), unit-tested row generation, and `shareFile.ts` (navigator.share with download fallback); (3) JSON backup/restore in `services/backup.ts` without silently overwriting existing rounds; (4) export button on the summary. Verify the currently recommended way to install SheetJS first (ExcelJS is the fallback). Follow section 23 of the prompt. Spanish UI.
+> We are in phase 8 (Polish and real-round test). Phase 7 is done and deployed. I attach the project files and the results of my iPhone tests (share sheet for Excel and backup, restore, offline, update prompt): <write here what worked and what did not>. Goal: fix what the iPhone tests revealed, then the polish items listed under "Pending for phase 8" in STATUS.md (manifest theme colours, `.muted` contrast, chunk-size warning), and prepare a checklist for the real-round test on the course. Follow section 23 of the prompt. Spanish UI.
