@@ -4,6 +4,8 @@ import { BigButton, BigLink } from '../components/BigButton';
 import { calculateRoundStats, holeScoreToPar, unplayedHoles } from '../domain/calculations';
 import { formatPercentage, formatToPar } from '../domain/format';
 import { useRoundSummary } from '../hooks/useRoundSummary';
+import { createExcelFile } from '../services/excelExport';
+import { shareFile } from '../services/shareFile';
 
 function StatCell({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
@@ -19,12 +21,15 @@ function holesWithoutScoreText(count: number): string {
   return count === 1 ? '1 hoyo sin score' : `${count} hoyos sin score`;
 }
 
+type ExportMessage = { tone: 'ok' | 'error'; text: string };
+
 export function RoundSummary() {
   const { roundId = '' } = useParams();
   const summary = useRoundSummary(roundId);
   const [confirming, setConfirming] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [finishFailed, setFinishFailed] = useState(false);
+  const [exportMessage, setExportMessage] = useState<ExportMessage | null>(null);
 
   const { round, holes } = summary;
 
@@ -76,6 +81,20 @@ export function RoundSummary() {
       setConfirming(false);
     } else {
       setFinishFailed(true);
+    }
+  };
+
+  // The file is built synchronously from data already in memory, with no await before
+  // shareFile: iOS only opens the share sheet while the tap is still "fresh".
+  const handleExport = async () => {
+    setExportMessage(null);
+    try {
+      const { blob, filename } = createExcelFile(round, holes);
+      const outcome = await shareFile(blob, filename);
+      if (outcome === 'shared') setExportMessage({ tone: 'ok', text: 'Excel compartido.' });
+      if (outcome === 'downloaded') setExportMessage({ tone: 'ok', text: 'Excel descargado.' });
+    } catch {
+      setExportMessage({ tone: 'error', text: 'No se pudo generar el Excel. Inténtalo de nuevo.' });
     }
   };
 
@@ -182,6 +201,22 @@ export function RoundSummary() {
               </BigButton>
             </div>
           </section>
+        )}
+
+        <BigButton
+          variant={isFinished ? 'primary' : 'secondary'}
+          disabled={stats.holesPlayed === 0}
+          onClick={handleExport}
+        >
+          Exportar a Excel
+        </BigButton>
+        {stats.holesPlayed === 0 && (
+          <p className="muted">Pon score al menos a un hoyo para poder exportar.</p>
+        )}
+        {exportMessage && (
+          <p role="status" className={exportMessage.tone === 'error' ? 'error' : 'badge'}>
+            {exportMessage.text}
+          </p>
         )}
 
         <BigLink to="/" variant="secondary">
