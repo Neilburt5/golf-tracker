@@ -4,6 +4,7 @@ import { HoleTracking } from './pages/HoleTracking'
 import { Home } from './pages/Home'
 import { NewRound } from './pages/NewRound'
 import { RoundSummary } from './pages/RoundSummary'
+import { Rounds } from './pages/Rounds'
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/new" element={<NewRound />} />
+          <Route path="/rounds" element={<Rounds />} />
           <Route path="/round/:roundId/hole/:holeNumber" element={<HoleTracking />} />
           <Route path="/round/:roundId/summary" element={<RoundSummary />} />
           <Route path="*" element={<Navigate to="/" replace />} />

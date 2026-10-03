@@ -33,6 +33,10 @@ export function Home() {
         Nueva ronda
       </BigLink>
 
+      <BigLink to="/rounds" variant="secondary">
+        Mis rondas
+      </BigLink>
+
       <footer className="footer">
         <span className={online ? 'status online' : 'status offline'}>
           {online ? 'Con conexión' : 'Sin conexión'}
