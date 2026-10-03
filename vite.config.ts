@@ -6,11 +6,16 @@ import { VitePWA } from 'vite-plugin-pwa'
 // `base` must match the GitHub repository name.
 export default defineConfig({
   test: {
-  include: ['tests/**/*.test.ts'],
-},
+    include: ['tests/**/*.test.ts'],
+  },
   base: '/golf-tracker/',
   define: {
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
+  build: {
+    // The main chunk is about 720 kB (SheetJS, see D17). It is downloaded once and
+    // precached for offline use, so the default 500 kB warning is noise (D22).
+    chunkSizeWarningLimit: 800,
   },
   plugins: [
     react(),
@@ -25,8 +30,8 @@ export default defineConfig({
         lang: 'es',
         display: 'standalone',
         orientation: 'portrait',
-        theme_color: '#0b3d2e',
-        background_color: '#0b3d2e',
+        theme_color: '#ffffff',
+        background_color: '#ffffff',
         icons: [
           { src: 'pwa-64x64.png', sizes: '64x64', type: 'image/png' },
           { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
