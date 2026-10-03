@@ -184,6 +184,11 @@ Format: **Decision**, **Reason**, and alternatives where relevant.
 
 **Reason:** iOS Safari only opens the share sheet while the tap is still a fresh user gesture; awaiting a database read first can make it fail. The fallback guarantees an export is never lost silently.
 
+## D22 — Light theme colours everywhere; chunk-size warning silenced on purpose
+
+**Decision:** `theme_color` / `background_color` and `<meta name="theme-color">` are `#ffffff`. The iOS status bar style is `default` (dark text), not `black-translucent`. Secondary text uses a solid `--muted` colour instead of `opacity`. `build.chunkSizeWarningLimit` is 800 kB.
+
+**Reason:** `black-translucent` draws white status bar text, invisible on a white page. Solid colours stay readable in sunlight and do not compound when nested. The only chunk over 500 kB is the SheetJS bundle (D17), precached once for offline use, so the warning carries no information; the raised limit still warns if the bundle grows unexpectedly.
 ---
 
 ## Open items

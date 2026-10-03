@@ -6,7 +6,7 @@ _Paste this file at the start of every new conversation, together with the files
 V0.1 (in progress)
 
 ## Current phase
-Phase 8 — Polish and real-round test (next up)
+Phase 8 — Polish done; real-round test on the course pending
 
 ## Phases
 
@@ -88,6 +88,14 @@ Phase 8 — Polish and real-round test (next up)
 - `npm run build` warns that the main chunk is over 500 kB (about 723 kB, 233 kB gzipped) because of SheetJS. Expected and harmless (precached for offline use).
 - Checked on the iPhone (deployed site): share sheet and file save for the Excel and the JSON backup, restore of the `.json` from Files (existing rounds skipped), and offline operation in airplane mode. Note: the `.xlsx` cannot be restored; only the `.json` backup can (the file picker greys out other files by design).
 
+## Phase 8 results (polish)
+
+- Theme colours aligned to the light theme; status bar style `default` (D22).
+- `.muted` and similar text now use a solid colour (`--muted`); warning/ok text darkened.
+- Chunk-size warning limit raised to 800 kB with a comment (D22).
+- Added `docs/real-round-checklist.md`.
+- Pending: real-round test on a course; fill in the findings.
+
 ## Environment
 
 - OS: Windows (no Mac)
@@ -100,17 +108,18 @@ Phase 8 — Polish and real-round test (next up)
 
 - (none)
 
+## Known limitations
+
+- (D13) Continue round opens the first unplayed hole even after editing an earlier one.
+- (D19) Restoring an in-progress round can change which round "Continue round" opens.
+- `crypto.randomUUID()` needs a secure context (only matters when testing over a LAN IP); optional fallback not implemented.
+
 ## Pending for phase 8
 
-- iPhone checks on the deployed site: share sheet for Excel and backup, restore from Files, offline behaviour of the new screens, "new version available" prompt after the deploy.
-- Real-round test on a course: speed of entry (target 10-15 s per hole), one-hand use, outdoor readability.
-- `theme_color` / `background_color` in the manifest and `<meta name="theme-color">` still use the old green; align with the light theme.
-- Check `.muted` contrast in sunlight.
-- Decide whether to silence the chunk-size warning (`build.chunkSizeWarningLimit`) and document why (D17).
-- `crypto.randomUUID()` still needs a secure context (only matters when testing over a LAN IP); optional fallback.
-- Known limitation (D13): Continue round opens the first unplayed hole even after editing an earlier one.
-- Known limitation (D19): restoring an in-progress round can change which round "Continue round" opens.
+- Check the "new version available" prompt on the iPhone after the deploy.
+- Real-round test on a course, following `docs/real-round-checklist.md`: speed of entry (target 10-15 s per hole), one-hand use, outdoor readability (including the new `--muted` colour and status bar).
+- Turn the findings into V0.1.x fixes.
 
 ## Next conversation template
 
-> We are in phase 8 (Polish and real-round test). Phase 7 is done and deployed. I attach the project files and the results of my iPhone tests (share sheet for Excel and backup, restore, offline, update prompt): <write here what worked and what did not>. Goal: fix what the iPhone tests revealed, then the polish items listed under "Pending for phase 8" in STATUS.md (manifest theme colours, `.muted` contrast, chunk-size warning), and prepare a checklist for the real-round test on the course. Follow section 23 of the prompt. Spanish UI.
+> We are in phase 8 (Polish and real-round test). Phase 7 is done and deployed. I attach the project files and the results of my iPhone tests (share sheet for Excel and backup, restore, offline, update prompt). Goal: fix what the iPhone tests revealed, then the polish items listed under "Pending for phase 8" in STATUS.md (manifest theme colours, `.muted` contrast, chunk-size warning), and prepare a checklist for the real-round test on the course. Follow section 23 of the prompt. Spanish UI.
