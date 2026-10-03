@@ -86,6 +86,7 @@ Phase 8 — Polish and real-round test (next up)
 - 134 Vitest tests passing. `tsc -b` and `npm run lint` clean. Export and backup/restore checked manually on the desktop browser (xlsx opens in Excel with correct sheets, totals and empty cells; backup restore skips existing rounds).
 - Choices made in phase 7: see D17-D21. In short: only played holes are exported, restore never overwrites, delete is always confirmed, files are built synchronously so the iOS share sheet keeps the tap gesture.
 - `npm run build` warns that the main chunk is over 500 kB (about 723 kB, 233 kB gzipped) because of SheetJS. Expected and harmless (precached for offline use).
+- Checked on the iPhone (deployed site): share sheet and file save for the Excel and the JSON backup, restore of the `.json` from Files (existing rounds skipped), and offline operation in airplane mode. Note: the `.xlsx` cannot be restored; only the `.json` backup can (the file picker greys out other files by design).
 
 ## Environment
 
@@ -97,7 +98,7 @@ Phase 8 — Polish and real-round test (next up)
 
 ## Open problems
 
-- Phase 7 has NOT yet been tested on the iPhone: share sheet with the `.xlsx` and the `.json` backup, and restoring a backup from the Files app. This is the first thing to verify after pushing.
+- (none)
 
 ## Pending for phase 8
 
