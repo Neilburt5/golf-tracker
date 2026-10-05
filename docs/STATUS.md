@@ -3,13 +3,14 @@
 _Paste this file at the start of every new conversation, together with the files relevant to the current phase._
 
 ## Current version
-V0.1 (in progress)
+V0.1 done and deployed. Current block: V0.1.x + V0.2 (export all, history and dashboard).
 
 ## Current phase
-Phase 8 — Polish done; real-round test on the course pending
+**Phase 9 — Export all rounds to one Excel file** (next up)
 
 ## Phases
 
+V0.1
 - [x] 0. Planning
 - [x] 1. Environment, repo and deployment
 - [x] 2. Domain and tests
@@ -18,7 +19,32 @@ Phase 8 — Polish done; real-round test on the course pending
 - [x] 5. Hole tracking screen
 - [x] 6. Summary and finish round
 - [x] 7. Excel export and JSON backup
-- [ ] 8. Polish and real-round test
+- [x] 8. Polish and real-round test
+
+V0.1.x / V0.2
+- [x] 9. Export all rounds to one Excel file
+- [ ] 10. Statistics domain (pure functions + tests)
+- [ ] 11. Dashboard UI: `/stats`, filters, best/worst, round list
+- [ ] 12. Charts, "where I lose strokes" breakdowns, backup nudge
+
+V0.3
+- [ ] 13. GPS field test page + decisions from a real round
+- [ ] 14. Weather per round
+- [ ] 15. Course geometry: coordinates and "mark point" tool
+
+V0.4
+- [ ] 16. Shot model, club bag, data layer, backup and Excel extension
+- [ ] 17. Shot capture UI
+
+V0.5
+- [ ] 18. Live distances and wind
+
+V0.7 (first part)
+- [ ] 19. Shot and weather analytics in the dashboard
+
+- [ ] 20. Second real-round test and polish
+
+Phases 13–20 are outlined only; each block is detailed at the start of its first phase (see docs/roadmap.md).
 
 ## Key decisions (see docs/decisions.md)
 
@@ -28,6 +54,12 @@ Phase 8 — Polish done; real-round test on the course pending
 - Per hole: score, putts, fairway, penalties, bunker, up & down, GIR (3-putt derived).
 - Rounds of 9 or 18 holes; 9-hole rounds start at hole 1 or 10.
 - Totals derived from holes, never stored.
+- Dashboard reads Dexie directly; JSON is only backup (D23). Export all = one file, fixed name, finished rounds only (D24).
+- Statistics rules for 9/18, incomplete and in-progress rounds (D25); V0.2 scope (D26); `/stats` route (D27); plain SVG charts (D30).
+- Roadmap re-cut: V0.3 environment (GPS test, weather, course geometry), V0.4 shots and clubs, V0.5 live distances and wind (D31).
+- GPS = one fix per tap, never continuous (D32). Course geometry captured by the user in-app (D33). Weather from Open-Meteo with the course coordinates (D34).
+- Elevation/slope discarded (D35). Distances in meters (D36). Shot tracking optional; `score` stays the truth (D37).
+- Every phase that adds data extends backup and export (D38).
 
 ## Phase 2 results (domain)
 
@@ -88,13 +120,29 @@ Phase 8 — Polish done; real-round test on the course pending
 - `npm run build` warns that the main chunk is over 500 kB (about 723 kB, 233 kB gzipped) because of SheetJS. Expected and harmless (precached for offline use).
 - Checked on the iPhone (deployed site): share sheet and file save for the Excel and the JSON backup, restore of the `.json` from Files (existing rounds skipped), and offline operation in airplane mode. Note: the `.xlsx` cannot be restored; only the `.json` backup can (the file picker greys out other files by design).
 
-## Phase 8 results (polish)
+## Phase 8 results (polish and real-round test)
 
 - Theme colours aligned to the light theme; status bar style `default` (D22).
 - `.muted` and similar text now use a solid colour (`--muted`); warning/ok text darkened.
 - Chunk-size warning limit raised to 800 kB with a comment (D22).
 - Added `docs/real-round-checklist.md`.
-- Pending: real-round test on a course; fill in the findings.
+- Update prompt ("new version available") verified on the iPhone.
+- Real round on the course: under 10 s per hole, one-hand use OK, readable in sunlight, data survived screen lock and app switching, GIR suggestion accurate, no recording problems.
+- Phase closed. The real pain found: one Excel file per round and no view of all rounds together; this starts the next block.
+
+## Phase 9 results (export all)
+
+- `selectRoundsForExport`, `buildAllRoundsWorkbook`, `createAllRoundsExcelFile` and `ALL_ROUNDS_FILENAME` in `services/excelExport.ts`; the single-round workbook now shares `workbookFromRows` with it.
+- "Exportar todo a Excel" on `/rounds`: finished rounds only, ascending by date (then createdAt, then id), fixed filename `golf-tracker-todas-las-rondas.xlsx`. Built synchronously from the rounds already in memory (D21). No new dependencies, schema unchanged.
+- Tests in `tests/excelExportAll.test.ts` (ordering, in-progress excluded, 9/18 holes, back nine numbering, unplayed holes, empty cells, file round trip).
+- Checked on the iPhone (deployed site): share sheet opens on the first tap, file saves to Files, "Replace" works with the fixed name. (Ajusta esta línea si algo salió distinto.)
+
+## Planning results for the V0.1.x / V0.2 block (second phase 0)
+
+- New decisions D23-D38 in `docs/decisions.md`; `PROMPT.md` (sections 1, 2, 3, 6-9, 12, 13, 16-20, 23, 25), `docs/roadmap.md` and `docs/architecture.md` updated.
+- Order of work chosen by the user: export all first, then the dashboard, then GPS / weather / clubs.
+- Slope/elevation discarded (D35). Distances in meters (D36).
+- Open items: backup nudge values and storage location (D28), whether restore needs a "replace with confirmation" option (D29), OpenStreetMap research (D33), Open-Meteo terms check (D34).
 
 ## Environment
 
@@ -112,14 +160,9 @@ Phase 8 — Polish done; real-round test on the course pending
 
 - (D13) Continue round opens the first unplayed hole even after editing an earlier one.
 - (D19) Restoring an in-progress round can change which round "Continue round" opens.
+- (D29) Restore never overwrites: edits to an existing round do not reach another device's copy.
 - `crypto.randomUUID()` needs a secure context (only matters when testing over a LAN IP); optional fallback not implemented.
-
-## Pending for phase 8
-
-- Check the "new version available" prompt on the iPhone after the deploy.
-- Real-round test on a course, following `docs/real-round-checklist.md`: speed of entry (target 10-15 s per hole), one-hand use, outdoor readability (including the new `--muted` colour and status bar).
-- Turn the findings into V0.1.x fixes.
 
 ## Next conversation template
 
-> We are in phase 8 (Polish and real-round test). Phase 7 is done and deployed. I attach the project files and the results of my iPhone tests (share sheet for Excel and backup, restore, offline, update prompt). Goal: fix what the iPhone tests revealed, then the polish items listed under "Pending for phase 8" in STATUS.md (manifest theme colours, `.muted` contrast, chunk-size warning), and prepare a checklist for the real-round test on the course. Follow section 23 of the prompt. Spanish UI.
+> We are in phase 10 (Statistics domain). Phases 0-9 are done and deployed; the V0.2 planning is in PROMPT.md, docs/roadmap.md and decisions D23-D38. I attach PROMPT.md, STATUS.md, decisions.md, architecture.md, database.md, the domain files (`types.ts`, `calculations.ts`, `format.ts`) and the calculation tests. Goal: create `src/domain/stats.ts`, pure TypeScript with no React and no IndexedDB, built on `calculations.ts` and taking `RoundWithHoles[]` as input. It follows the rules of D25 and the scope of D26: in-progress rounds excluded; round-level metrics (average score, putts, best/worst round) from complete finished rounds, with 9-hole and 18-hole rounds never mixed; hole-level rates (GIR %, fairway %, up & down %, 3-putts per hole, penalties per hole) from all played holes of finished rounds; breakdowns by par type, hole number and course; putts with and without GIR; score-to-par series over time; course and 9/18 filters as pure functions; every figure carries its sample size; percentages 0-100, unrounded, `null` when the denominator is 0 (D18). Add Vitest tests for each rule, including empty data, incomplete rounds and 9 vs 18 separation. No UI in this phase and no new dependencies. Follow section 23 of the prompt. Spanish UI is not involved yet.
