@@ -6,6 +6,7 @@ import { formatToPar } from '../domain/format';
 import type { RoundWithHoles } from '../domain/types';
 import { useRounds, type RestoreOutcome } from '../hooks/useRounds';
 import { createBackupFile, type BackupErrorCode, type RestoreSummary } from '../services/backup';
+import { createAllRoundsExcelFile, selectRoundsForExport } from '../services/excelExport';
 import { shareFile } from '../services/shareFile';
 
 type Message = { tone: 'ok' | 'error'; text: string };
@@ -135,12 +136,23 @@ export function Rounds() {
   const [restoring, setRestoring] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
+  const exportableCount = selectRoundsForExport(rounds).length;
+  const inProgressCount = rounds.filter((r) => r.round.status === 'in_progress').length;
+
   // No await before shareFile: iOS only opens the share sheet while the tap is still fresh.
   const handleBackup = async () => {
     const { blob, filename } = createBackupFile(rounds.map((r) => r));
     const outcome = await shareFile(blob, filename);
     if (outcome === 'shared') setMessage({ tone: 'ok', text: 'Copia compartida.' });
     if (outcome === 'downloaded') setMessage({ tone: 'ok', text: 'Copia descargada.' });
+  };
+
+  // No await before shareFile: iOS only opens the share sheet while the tap is still fresh.
+  const handleExportAll = async () => {
+    const { blob, filename } = createAllRoundsExcelFile(rounds);
+    const outcome = await shareFile(blob, filename);
+    if (outcome === 'shared') setMessage({ tone: 'ok', text: 'Excel compartido.' });
+    if (outcome === 'downloaded') setMessage({ tone: 'ok', text: 'Excel descargado.' });
   };
 
   const handleFileChosen = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -181,6 +193,27 @@ export function Rounds() {
           ))}
         </section>
       )}
+
+      <section className="stack">
+        <h2 className="subtitle">Excel</h2>
+        <p className="muted">
+          Un solo archivo con todas las rondas finalizadas ({exportableCount}).
+          {inProgressCount > 0 && ` Las rondas en curso no se incluyen (${inProgressCount}).`}{' '}
+          El archivo siempre se llama igual: al guardarlo en Archivos puedes elegir «Reemplazar».
+        </p>
+        <BigButton
+          variant="secondary"
+          disabled={loadState !== 'ready' || exportableCount === 0}
+          onClick={handleExportAll}
+        >
+          Exportar todo a Excel
+        </BigButton>
+        {message && (
+          <p role="status" className={message.tone === 'error' ? 'error' : 'badge'}>
+            {message.text}
+          </p>
+        )}
+      </section>
 
       <section className="stack">
         <h2 className="subtitle">Copia de seguridad</h2>
