@@ -5,10 +5,13 @@ import {
   isPlayed,
   isThreePutt,
 } from '../domain/calculations';
-import type { Hole, Round } from '../domain/types';
+import type { Hole, Round, RoundWithHoles } from '../domain/types';
 import { localDateStamp, slugify } from './filenames';
 
 export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+/** Fixed name for the "export all" file, so the user can choose "Replace" in Files (D24). */
+export const ALL_ROUNDS_FILENAME = 'golf-tracker-todas-las-rondas.xlsx';
 
 /** Column order follows section 16 of PROMPT.md. */
 export const ROUND_COLUMNS = [
@@ -125,16 +128,56 @@ function toSheetData<K extends string>(
   return [[...columns], ...rows.map((row) => columns.map((column) => row[column]))];
 }
 
-/** Workbook with sheets ROUND (one row) and HOLES (one row per played hole). */
-export function buildWorkbook(round: Round, holes: readonly Hole[]): WorkBook {
+/** Workbook with sheets ROUND and HOLES from already built rows. Shared by both export modes. */
+function workbookFromRows(
+  roundRows: readonly RoundRow[],
+  holeRows: readonly HoleRow[],
+): WorkBook {
   const workbook = utils.book_new();
 
-  const roundSheet = utils.aoa_to_sheet(toSheetData(ROUND_COLUMNS, [buildRoundRow(round, holes)]));
-  const holesSheet = utils.aoa_to_sheet(toSheetData(HOLE_COLUMNS, buildHoleRows(round, holes)));
+  const roundSheet = utils.aoa_to_sheet(toSheetData(ROUND_COLUMNS, roundRows));
+  const holesSheet = utils.aoa_to_sheet(toSheetData(HOLE_COLUMNS, holeRows));
 
   utils.book_append_sheet(workbook, roundSheet, 'ROUND');
   utils.book_append_sheet(workbook, holesSheet, 'HOLES');
   return workbook;
+}
+
+/** Workbook for ONE round: ROUND (one row) and HOLES (one row per played hole). */
+export function buildWorkbook(round: Round, holes: readonly Hole[]): WorkBook {
+  return workbookFromRows([buildRoundRow(round, holes)], buildHoleRows(round, holes));
+}
+
+function compareText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * Rounds that go into the "export all" file (D24): finished rounds only, ascending
+ * by date, then by creation time, then by id so the order is always stable.
+ * Does not mutate its input.
+ */
+export function selectRoundsForExport(rounds: readonly RoundWithHoles[]): RoundWithHoles[] {
+  return rounds
+    .filter(({ round }) => round.status === 'finished')
+    .sort(
+      (a, b) =>
+        compareText(a.round.date, b.round.date) ||
+        compareText(a.round.createdAt, b.round.createdAt) ||
+        compareText(a.round.id, b.round.id),
+    );
+}
+
+/**
+ * Workbook for ALL finished rounds: ROUND (one row per round) and HOLES (one row
+ * per played hole of those rounds). Reuses the single-round row builders.
+ */
+export function buildAllRoundsWorkbook(rounds: readonly RoundWithHoles[]): WorkBook {
+  const selected = selectRoundsForExport(rounds);
+  return workbookFromRows(
+    selected.map(({ round, holes }) => buildRoundRow(round, holes)),
+    selected.flatMap(({ round, holes }) => buildHoleRows(round, holes)),
+  );
 }
 
 /** Serialises a workbook to .xlsx bytes. */
@@ -155,4 +198,15 @@ export function createExcelFile(
 ): { blob: Blob; filename: string } {
   const bytes = workbookToBytes(buildWorkbook(round, holes));
   return { blob: new Blob([bytes], { type: XLSX_MIME }), filename: exportFilename(round) };
+}
+
+/**
+ * Builds the .xlsx file with every finished round and a fixed filename (D24).
+ * Synchronous so it can run inside a tap handler (D21).
+ */
+export function createAllRoundsExcelFile(
+  rounds: readonly RoundWithHoles[],
+): { blob: Blob; filename: string } {
+  const bytes = workbookToBytes(buildAllRoundsWorkbook(rounds));
+  return { blob: new Blob([bytes], { type: XLSX_MIME }), filename: ALL_ROUNDS_FILENAME };
 }
