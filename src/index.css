@@ -235,3 +235,31 @@ a.btn-secondary, a.btn-secondary:visited { color: var(--fg); }
   border-radius: 12px;
   text-decoration: none;
 }
+/* ---- Dashboard (phase 11) ---- */
+.field-label { display: block; font-size: 0.9rem; font-weight: 700; margin-bottom: 8px; }
+.select {
+  width: 100%;
+  min-height: 56px;
+  padding: 0 12px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--fg);
+  background: var(--bg);
+  border: 2px solid var(--line);
+  border-radius: 12px;
+}
+.stats-filters { display: grid; gap: 16px; }
+.segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.segmented .option { padding: 0 4px; font-size: 1rem; }
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.stat-sample { font-size: 0.85rem; color: var(--muted); }
+.best-worst { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.round-list { display: flex; flex-direction: column; gap: 10px; }
+
+@media (min-width: 720px) {
+  /* Only the dashboard gets wider; every other screen keeps the phone width. */
+  .app:has(.stats-screen) { max-width: 960px; }
+  .stats-filters { grid-template-columns: 2fr 1fr; align-items: end; }
+  .stats-grid { grid-template-columns: repeat(3, 1fr); }
+  .best-worst { grid-template-columns: 1fr 1fr; }
+}

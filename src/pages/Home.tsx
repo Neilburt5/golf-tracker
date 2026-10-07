@@ -37,6 +37,10 @@ export function Home() {
         Mis rondas
       </BigLink>
 
+      <BigLink to="/stats" variant="secondary">
+        Estadísticas
+      </BigLink>
+
       <footer className="footer">
         <span className={online ? 'status online' : 'status offline'}>
           {online ? 'Con conexión' : 'Sin conexión'}
