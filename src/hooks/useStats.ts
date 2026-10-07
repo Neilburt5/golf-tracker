@@ -42,12 +42,12 @@ export function useStats() {
   }, []);
 
   const setCourseId = useCallback((courseId: string | null) => {
-    setFilter((current) => ({ ...current, courseId }));
-  }, []);
+  setFilter((current: StatsFilter) => ({ ...current, courseId }));
+}, []);
 
-  const setNumberOfHoles = useCallback((numberOfHoles: NumberOfHoles | null) => {
-    setFilter((current) => ({ ...current, numberOfHoles }));
-  }, []);
+const setNumberOfHoles = useCallback((numberOfHoles: NumberOfHoles | null) => {
+  setFilter((current: StatsFilter) => ({ ...current, numberOfHoles }));
+}, []);
 
   const rounds = result?.status === 'ready' ? result.rounds : NO_ROUNDS;
 
