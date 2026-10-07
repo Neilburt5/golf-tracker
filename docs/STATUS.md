@@ -143,6 +143,17 @@ Phases 13–20 are outlined only; each block is detailed at the start of its fir
 - Choices: `roundLevel` is `null` until a 9/18 length is chosen (D25); best/worst by score to par, ties to the earliest round; complete round = finished, `holes.length === numberOfHoles`, all played; hole-level `rounds` = finished rounds with at least one played hole; course name from the latest round.
 - Every figure carries its sample size (`Rate`, `PerHole`, `HoleStats.holes`, `RoundLevelStats.rounds`).
 
+## Phase 11 results (dashboard UI)
+
+- `listCourseOptions` (+ `CourseOption`) in `domain/stats.ts`, the only domain change; 7 tests in `tests/courseOptions.test.ts`.
+- `hooks/useStats.ts`: loads rounds once via `listRoundsWithHoles`, holds the filter (default 18 holes, all courses), returns `stats` (from `calculateStats`), course options and the filtered finished rounds.
+- `pages/Stats.tsx` at `/stats`: course select, 18 / 9 / Ambas control, summary cards with sample sizes, best/worst round (need at least 2 complete rounds), per-hole cards, list of finished rounds (newest first) opening `/round/:id/summary`. Empty states: no finished rounds, none for the filter, fewer than 3 rounds; hint when `roundLevel` is null or has no complete round.
+- "Estadísticas" button on Home, `/stats` route in `App.tsx`; dashboard CSS appended to `index.css` (wider layout on desktop only for `.stats-screen`).
+- No new dependencies, schema unchanged, in-round screens untouched.
+- Choices: "Rondas finalizadas" counts all finished rounds of the filter; score averages use complete rounds only; low-sample notice uses finished rounds (< 3).
+- Pending checks: ticking the iPhone test on the deployed site.
+- Next: phase 12 (charts, breakdowns by par / hole / course, putts with/without GIR, backup nudge). Move the number formatters to `domain/format.ts` then.
+
 ## Planning results for the V0.1.x / V0.2 block (second phase 0)
 
 - New decisions D23-D38 in `docs/decisions.md`; `PROMPT.md` (sections 1, 2, 3, 6-9, 12, 13, 16-20, 23, 25), `docs/roadmap.md` and `docs/architecture.md` updated.
