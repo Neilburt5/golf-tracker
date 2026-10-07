@@ -8,7 +8,7 @@ import {
   type CourseOption,
   type Stats,
   type StatsFilter,
-} from '../domain/Stats';
+} from '../domain/stats';
 import type { NumberOfHoles, RoundWithHoles } from '../domain/types';
 
 export type StatsLoadState = 'loading' | 'ready' | 'error';

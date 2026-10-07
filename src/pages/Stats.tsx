@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { BigLink } from '../components/BigButton';
 import { calculateRoundStats } from '../domain/calculations';
 import { formatPercentage, formatToPar } from '../domain/format';
-import type { RoundResult } from '../domain/Stats';
+import type { RoundResult } from '../domain/stats';
 import type { NumberOfHoles, RoundWithHoles } from '../domain/types';
 import { useStats } from '../hooks/useStats';
 

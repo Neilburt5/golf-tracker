@@ -1,0 +1,3152 @@
+﻿=== PROMPT.md ===
+# Golf Tracker — Master Project Prompt (PWA edition)
+
+You are my senior software engineer, software architect, and development partner.
+
+We are building a **Progressive Web App (PWA)** for tracking golf performance. It is developed incrementally, lives in a GitHub repository, and is used on an iPhone during real golf rounds.
+
+> This prompt supersedes the original .NET MAUI version. All technology decisions below were made deliberately; see `docs/decisions.md` for the reasoning. Do not silently revisit them.
+
+---
+
+## 1. PROJECT OBJECTIVE
+
+The app allows a golfer to:
+
+1. Create a new golf round.
+2. Select the golf course.
+3. Record statistics hole by hole while playing.
+4. Finish the round.
+5. Review the round.
+6. Store the round locally.
+7. Export the collected data to Excel.
+8. See the history of all rounds and general statistics in an in-app dashboard.
+
+Long-term, the goal is NOT simple score tracking. It is a **personal golf performance analytics system** that shows strengths, weaknesses, where strokes are lost, and what to practice.
+
+---
+
+## 2. PLATFORM AND TECHNOLOGY
+
+### Primary platform
+iPhone, installed as a PWA from Safari ("Add to Home Screen"). Android is not a priority but should work naturally because it is a web app. Do not sacrifice the iPhone experience for anything else.
+
+### Constraints of the user's environment
+- Development happens on **Windows/Linux with VS Code**. There is **no Mac**.
+- **No paid Apple Developer account.** The solution must be free to build, host, and install.
+- Native iOS toolchains (MAUI, SwiftUI, Xcode) are therefore out of scope.
+
+### Stack (fixed)
+- **TypeScript** (strict mode)
+- **React** with function components and hooks
+- **Vite** as build tool
+- **React Router** using `HashRouter` (GitHub Pages cannot serve deep links)
+- **Dexie** (IndexedDB wrapper) for local persistence
+- **SheetJS (`xlsx`)** for Excel export (vendored, see D17)
+- **vite-plugin-pwa** for manifest and service worker
+- **Vitest** + **fake-indexeddb** for tests
+- **ESLint**
+- **Git + GitHub**, hosted on **GitHub Pages** (deployed via GitHub Actions)
+
+Do not add other dependencies without a clear stated reason. No backend, no cloud database, no analytics, no third-party tracking.
+
+The only planned external service is **Open-Meteo** (weather), introduced in V0.3: free for non-commercial use, requests carry only the course coordinates, never the user's position (see D34). Nothing else leaves the device.
+
+The app UI language is **Spanish**. Code, comments, docs, and commit messages are in English. Distances are in **meters** (D36).
+
+---
+
+## 3. IOS / PWA REQUIREMENTS
+
+The app is used with one hand, outdoors, while playing. Prioritize:
+
+- Large touch targets
+- Clear visual hierarchy and outdoor readability (high contrast)
+- Fast data entry, minimal typing, minimal navigation
+- Fully offline operation after first load
+- Reliable persistence
+
+The active-round screen is the most important screen in the app. Screens used outside the course (history, dashboard) are not time-critical, but must never change or slow down the in-round screens.
+
+Design principle:
+
+> SPEED > COMPLEXITY
+
+Every feature is evaluated against: *"Does this make collecting useful data easier without interrupting the round?"* If not, it belongs in a later version.
+
+### Known iOS/PWA realities (must be respected)
+- The service worker requires **HTTPS**. Offline behaviour can only be tested on the deployed GitHub Pages site, not over a local IP.
+- Safari can evict storage of rarely used sites. Request persistent storage (`navigator.storage.persist()`) and provide an easy JSON backup.
+- The PWA needs a `manifest`, and an `apple-touch-icon` for the home-screen icon.
+- Respect safe areas (`env(safe-area-inset-*)`) and use `viewport-fit=cover`.
+- No haptic feedback is available on iOS Safari. Do not rely on it.
+- Updated service workers can leave users on stale versions. Provide a visible "new version available" prompt.
+- The Screen Wake Lock API is unreliable in installed PWAs; treat it as an optional enhancement only.
+- A web app **cannot append to or overwrite an existing file** on iOS. Excel/JSON files are always generated new (with a fixed filename the user can choose "Replace" in Files).
+- **Geolocation in installed PWAs is quirky on iOS** (permission prompts and permission state have been reported as inconsistent) and JavaScript is suspended when the screen locks or the app goes to the background. Design GPS features around single fixes taken at a user tap, never around continuous tracking, and test on the real iPhone before building on them (D32).
+
+---
+
+## 4. DEVELOPMENT ENVIRONMENT AND DEPLOYMENT
+
+- Develop in VS Code with `npm run dev`. The dev server can be opened from the iPhone on the local network to check layout.
+- Publish to GitHub Pages (Vite `base` must match the repository name).
+- Install on the iPhone: open the published URL in Safari → Share → **Add to Home Screen**.
+- No Mac, no Apple Developer account, and no App Store submission are required.
+- If a Mac and developer account are ever available, the app can be wrapped natively with Capacitor without a rewrite. This is a possible future option, not a current concern.
+
+---
+
+## 5. DEVELOPMENT PHILOSOPHY
+
+- Keep each version simple. Avoid overengineering.
+- Prefer readable code over clever code.
+- Separate UI, hooks, domain logic, and data persistence (see architecture below).
+- Keep database models separate from UI state where appropriate.
+- Do not add unnecessary dependencies or implement future features prematurely.
+- Do not create huge components or functions. Use meaningful names.
+- Handle errors gracefully.
+- **Never lose recorded golf data because of a navigation or UI error.**
+- Before major architectural decisions, briefly explain the reasoning.
+
+---
+
+## 6. REPOSITORY STRUCTURE
+
+```text
+golf-tracker/
+├── src/
+│   ├── pages/         Home, NewRound, HoleTracking, RoundSummary, Rounds, Stats
+│   ├── components/    Stepper, YesNoToggle, HoleProgress, charts (SVG), ...
+│   ├── hooks/         useHoleForm, useRoundSummary, useRounds, useStats, ...
+│   ├── domain/        types.ts, calculations.ts, validation.ts, resume.ts, format.ts, stats.ts  (pure TypeScript)
+│   ├── data/          db.ts, roundRepository.ts, courseRepository.ts, courses.json
+│   ├── services/      excelExport.ts, shareFile.ts, backup.ts, filenames.ts, storagePersistence.ts
+│   └── main.tsx
+├── public/            manifest icons, apple-touch-icon
+├── vendor/            SheetJS tarball (D17)
+├── tests/
+├── docs/
+│   ├── architecture.md
+│   ├── database.md
+│   ├── roadmap.md
+│   ├── decisions.md
+│   ├── real-round-checklist.md
+│   └── STATUS.md
+├── README.md
+├── PROMPT.md
+├── .gitignore
+├── LICENSE
+└── vite.config.ts
+```
+
+### Architecture layers (dependencies flow one way: UI → hooks → domain/data)
+- **UI** (`pages`, `components`): renders and captures touches only.
+- **Hooks**: act as view-models (state, orchestration, autosave).
+- **Domain**: pure TypeScript, no React, no IndexedDB. Types, calculations, validation, statistics. Reused by summary, export, history, dashboard, and analytics.
+- **Data**: Dexie database and repositories. The only layer that touches IndexedDB.
+- **Services**: export, sharing, backup (and later weather and geolocation wrappers).
+
+---
+
+## 7. VERSIONING
+
+Roadmap:
+
+```text
+V0.1   → Basic round tracker                                   (done)
+V0.1.x → Export all rounds to one Excel file
+V0.2   → History and dashboard (in-app statistics)
+V0.3   → Environment and course data (GPS field test, weather, course geometry)
+V0.4   → Shots and clubs (club per shot, GPS point per shot)
+V0.5   → Live on-course info (distance to green and landmarks, wind)
+V0.6   → Strokes Gained
+V0.7   → Advanced performance analytics
+V0.8   → Advanced club analytics
+V0.9   → Training recommendations
+V1.0   → Personal golf analytics platform
+```
+
+The roadmap was re-cut after V0.1 (D31): the originally separate shot-by-shot, GPS and club versions are merged into the V0.4/V0.5 flow described in section 18, and weather is added in V0.3. Elevation/slope was evaluated and discarded (D35).
+
+**We implement one block at a time.** Future features may influence architecture where reasonable but must not complicate the current block.
+
+---
+
+## 8. V0.1 (DONE) AND THE CURRENT BLOCK
+
+V0.1 lets a user complete an entire round and is built and deployed.
+
+```text
+HOME → NEW ROUND (course, tee, 9/18, which nine) → HOLE 1 ↔ … ↔ HOLE N
+     → ROUND SUMMARY → FINISH ROUND → EXPORT TO EXCEL
+```
+
+Home shows **"Continue round"** if a round is in progress, reopening the exact hole where the user left off. Course selection and round setup are merged into a single "New round" screen to save steps. "Mis rondas" lists every round, with open, confirmed delete, JSON backup and restore.
+
+### Current block: V0.1.x and V0.2
+
+```text
+V0.1.x  /rounds → "Export all" → one .xlsx, fixed filename, all finished rounds
+V0.2    HOME → STATS (/stats): general statistics, course and 9/18 filters,
+        best/worst round, charts, list of rounds → existing round summary
+```
+
+The dashboard reads the Dexie database directly (D23). JSON stays a backup/transfer format. Scope and rules are in D24–D30.
+
+---
+
+## 9. DATA TO RECORD
+
+### Per round (V0.1)
+Round ID, date, course, tee, number of holes, which nine (holes 1–9 or 10–18), status, timestamps. Totals are **derived**, not stored.
+
+### Per hole (V0.1)
+Hole number, par, score, putts, fairway hit, GIR, penalty strokes, bunker, up & down. **3-putt is derived** from putts (`putts >= 3`).
+
+### Planned additions (not before their version)
+- V0.3: weather snapshot per round (temperature, precipitation, pressure, wind).
+- V0.4: shots per hole (club, GPS point with accuracy, timestamp).
+
+Do NOT add shot-by-shot tracking, GPS, weather, club tracking, AI, or cloud sync before their version.
+
+---
+
+## 10. USER EXPERIENCE (IN-ROUND SCREEN)
+
+**The app must be fast to use during a real round.** Recording a hole should take about 10–15 seconds (measured on a real round: under 10 s).
+
+Avoid text input. Prefer buttons, toggles, segmented controls, and +/- steppers.
+
+```text
+HOLE 7  (7 / 18)        Par 4
+
+Score:     [-]  5  [+]
+Putts:     [-]  2  [+]
+Fairway:   [ YES ] [ NO ]        (hidden on par 3)
+GIR:       [ YES ] [ NO ]        (auto-suggested, editable)
+Penalty:   [-]  0  [+]
+Bunker:    [ YES ] [ NO ]
+Up & Down: [ YES ] [ NO ] [ N/A ]
+
+[ SAVE & NEXT HOLE ]
+```
+
+The interface must make it extremely hard to lose data by accident.
+
+---
+
+## 11. HOLE NAVIGATION
+
+The user must be able to move forward, go back, edit any previous hole, see the current hole, and see progress (e.g. `Hole 7 / 18` or a dot bar).
+
+- Going backwards restores all previously entered data.
+- Changing a previous hole updates round totals and statistics.
+- **Autosave:** every change is persisted to IndexedDB immediately (short debounce), and again on "Save & next". The round stays `in_progress` until explicitly finished.
+
+---
+
+## 12. COURSE MODEL
+
+Courses are **not** created in the app. They live in a `courses.json` file bundled in the repository (`src/data/courses.json`), maintained by the user in VS Code. Bundling it guarantees availability offline.
+
+```ts
+Course {
+  id: string
+  name: string
+  location: string
+  numberOfHoles: 9 | 18
+  tees: string[]
+  holes: { number: number; par: number }[]
+}
+```
+
+Stroke index and distances are not planned before they are needed. From V0.3 the course data gains coordinates (course location for weather; green centers and landmarks per hole captured by the user with an in-app "mark point" tool, D33). Rounds store a **snapshot** of the course name and hole pars, so later edits to `courses.json` never alter historical rounds.
+
+---
+
+## 13. DATABASE
+
+Use Dexie (IndexedDB). Keep a relational structure; **do not store a whole round as one JSON blob.**
+
+```text
+Round (1) ──── (*) Hole          (V0.1)
+Hole  (1) ──── (*) Shot          (V0.4, planned)
+```
+
+Courses come from JSON, not from a database table (see `docs/decisions.md`).
+
+```ts
+Round {
+  id: string              // uuid via crypto.randomUUID()
+  courseId: string
+  courseName: string      // snapshot
+  date: string            // ISO
+  tee: string
+  numberOfHoles: 9 | 18
+  startHole: 1 | 10       // first nine or last nine
+  status: 'in_progress' | 'finished'
+  createdAt: string
+  updatedAt: string
+}
+
+Hole {
+  id: string
+  roundId: string
+  holeNumber: number
+  par: number             // snapshot
+  score: number | null    // null = not yet saved
+  putts: number
+  fairway: boolean | null // null = not applicable (par 3)
+  gir: boolean
+  penaltyStrokes: number
+  bunker: boolean
+  upAndDown: boolean | null // null = no opportunity
+}
+```
+
+- Unique index on `[roundId+holeNumber]`.
+- **GIR suggestion:** `score - putts <= par - 2`, editable by the user with one tap.
+- Schema changes always add a new `version(n)` block with a migration; never edit an existing version.
+- Document the final schema in `docs/database.md`.
+
+---
+
+## 14. VALIDATION
+
+Sensible, not annoying:
+
+- Score >= 1; putts >= 0; penalty strokes >= 0; valid hole number.
+- A hole cannot be saved without a score.
+- Fairway supports "not applicable" (par 3).
+- Up & down supports "not applicable".
+- Do NOT enforce `putts <= score` or other rules that block unusual but possible situations.
+
+---
+
+## 15. ROUND SUMMARY AND CALCULATIONS
+
+After the last hole show: total score, total putts, score to par, fairways (hit / applicable), GIR (x / holes), 3-putts, penalties, bunkers, up & downs (made / attempts).
+
+The user can review and correct holes before permanently finishing (with a confirmation).
+
+Calculations (in `domain/`, never inside UI code): total score, total par, score to par, total putts, fairways hit and opportunities, GIR and GIR %, penalty strokes, bunkers, up & down attempts / made / %, 3-putts. The same logic is reused by the summary, history, dashboard, analytics, and Excel export.
+
+---
+
+## 16. EXCEL EXPORT
+
+Generated locally in the browser as `.xlsx` with two sheets.
+
+**ROUND** (one row per round): Round ID, Date, Course, Tee, Total Score, Total Par, Score To Par, Total Putts, Fairways, Fairway Opportunities, GIR, GIR Percentage, Penalties, Bunkers, Up & Downs, Up & Down Attempts, Up & Down Percentage, 3-Putts.
+
+**HOLES** (one row per hole): Round ID, Date, Course, Hole, Par, Score, Score To Par, Putts, Fairway, GIR, Penalty, Bunker, Up & Down, 3-Putt.
+
+Philosophy: **ONE ROW = ONE HOLE.** No merged cells, no decorative formatting, no nested structures. Booleans as 1/0; "not applicable" as an empty cell. The data must import cleanly into Excel, Power BI, Python/pandas, and MATLAB.
+
+Two export modes (D24): a single round from its summary, and **all finished rounds** in one file with a fixed filename from the rounds list. Later versions add sheets (e.g. one row per shot) without changing the existing ones.
+
+Delivery on iOS: use the system share sheet (`navigator.share` with a file), falling back to a direct download.
+
+---
+
+## 17. OFFLINE-FIRST
+
+After the first load, the user must be able to start a round, select a course, enter every hole, save, review, see the dashboard, and export, all without connectivity. The first visit requires internet to download and cache the app.
+
+Features that need the network (live wind, weather) degrade gracefully: they show the last known value with its time, or nothing, and never block the round.
+
+---
+
+## 18. FUTURE VERSIONS (do NOT implement before their block)
+
+- **V0.1.x Export all:** one `.xlsx` with every finished round and a fixed filename (D24).
+- **V0.2 History and dashboard:** IN: general statistics (rounds, average score, putts, GIR %, fairway %, 3-putts, penalties, up & down %), course and 9/18 filters, best/worst round, evolution chart, breakdown by par type, hole number and course, putts with/without GIR, round list with detail (existing summary), last-backup date and nudge. OUT: Strokes Gained, handicap, any statistic that needs data not recorded in V0.1, cloud, accounts. Statistics rules in D25.
+- **V0.3 Environment and course data:**
+  - GPS field test page (accuracy, permissions, screen lock) used on a real round, decisions recorded before building on GPS.
+  - Weather per round (temperature, precipitation, pressure, wind) from Open-Meteo using the course coordinates, fetched online and back-filled after the round if needed (D34).
+  - Course geometry: green centers and landmarks (dogleg, water) per hole captured by the user in-app and pasted into `courses.json` (D33).
+- **V0.4 Shots and clubs:** optional per hole. Club bag configured once. On each club selection the app stores a single GPS fix (with accuracy) and timestamp; shot distance is the distance between consecutive fixes (D32). Selecting the putter hands over to the existing hole screen. `score` stays the source of truth; a mismatch with the recorded shots is shown but never blocks (D37). New `Shot` table, linked to `Hole`.
+- **V0.5 Live on-course info:** distance to the center of the green and to landmarks, wind speed and direction with headwind/crosswind components relative to the line ball→green, always with an accuracy/age indicator. Elevation difference is explicitly NOT planned (D35).
+- **V0.6 Strokes Gained:** must follow a clearly documented reference (population, method, inputs, limitations). Do NOT invent a methodology. Deterministic and testable.
+- **V0.7 Advanced analytics:** performance by hole, par, distance, course, tee, approach distance bands, effect of weather on results and club distances (always showing sample sizes, never presenting correlation as cause).
+- **V0.8 Advanced club analytics:** per-club distance, dispersion relative to the line to the green.
+- **V0.9 Training recommendations:** clearly separate DATA → ANALYSIS → INTERPRETATION → RECOMMENDATION. Never present an unsupported interpretation as fact.
+- **V1.0 Platform:** cloud sync, accounts, dashboards, optional AI assistant, Apple Watch, widgets.
+- **AI (long term):** AI explains and summarizes the user's own statistics. It never replaces deterministic calculations and never silently modifies data.
+
+### Target on-course flow (V0.4 + V0.5, for reference)
+
+1. Arrive at the ball: the phone shows distance to the green and landmarks, wind (speed, direction, headwind/crosswind).
+2. Choose the club and mark it in the app; a GPS point is stored.
+3. Walk to the next ball and mark the next club; the previous shot's distance is derived from the two points.
+4. On the green choose "putter": the app opens the existing hole screen (putts, GIR, fairway, penalties, bunker, up & down).
+5. Next hole.
+6. When the round is finished and confirmed, it is already stored in the database and appears in the dashboard. The JSON is only a backup; at finish the app offers "Guardar copia" in one tap (D23).
+
+---
+
+## 19. TESTING
+
+Unit tests (Vitest) for important logic, not for coverage's sake:
+
+- Calculations: total score, score to par, putts, fairways, GIR, up & down, 3-putts, round totals.
+- Statistics: aggregations, 9/18 separation, incomplete and in-progress rounds, by par type / hole / course, trends.
+- Validation rules.
+- Repositories with `fake-indexeddb`: save, restore, edit holes, restore in-progress round.
+- Excel export: verify generated rows, not the binary file.
+- Backup: old and new `schemaVersion` files.
+
+UI tests are not required.
+
+---
+
+## 20. DATA INTEGRITY
+
+Golf data becomes valuable as it accumulates (hundreds of rounds over time).
+
+- Never silently overwrite a round. Never silently delete data. Confirm destructive actions.
+- Save hole data reliably; preserve data when navigating backwards.
+- Handle app interruption gracefully (Safari closing, phone locking). An in-progress round must always be recoverable.
+- JSON backup/restore exists; as the dataset grows the app shows the date of the last backup and nudges after N rounds without one (D28).
+- Every phase that adds stored data extends, in the same phase, the backup (still accepting older files), the Excel export, and their tests (D38).
+- Restore never overwrites existing rounds (D19). Known consequence: edits to an existing round do not propagate to another device's copy (D29).
+
+---
+
+## 21. GIT WORKFLOW
+
+Small, logical commits using conventional prefixes:
+
+```text
+feat: add round domain calculations
+feat: add dexie schema and round repository
+feat: create new round screen
+feat: add hole tracking screen
+fix: preserve hole data when navigating backwards
+test: add round calculation tests
+docs: update architecture
+```
+
+Avoid huge commits with unrelated changes.
+
+---
+
+## 22. DOCUMENTATION
+
+Maintain `README.md`, `docs/architecture.md`, `docs/database.md`, `docs/roadmap.md`, `docs/decisions.md`, and `docs/STATUS.md`. Documentation evolves with the project. Important technical decisions are recorded in `decisions.md` (decision + reason + rejected alternatives).
+
+---
+
+## 23. DEVELOPMENT PROCESS
+
+Work incrementally. Before implementing a feature:
+
+1. Explain what we are building and why.
+2. Explain which files will change.
+3. Implement it.
+4. Explain how to test it.
+5. Identify potential issues.
+6. Wait for my feedback before moving to a large unrelated feature.
+
+Do not silently rewrite large parts of the project. For significant architectural changes: explain the problem, the proposed solution, the alternatives, and the impact, and wait for confirmation.
+
+### Work is split into phases, one conversation per phase
+
+```text
+V0.1
+0  Planning (done)
+1  Environment, repo and deployment                      (done)
+2  Domain and tests                                      (done)
+3  Data layer                                            (done)
+4  UI skeleton: Home and New Round                       (done)
+5  Hole tracking screen                                  (done)
+6  Summary and finish round                              (done)
+7  Excel export and JSON backup                          (done)
+8  Polish and real-round test                            (done)
+
+V0.1.x / V0.2
+9  Export all rounds to one Excel file
+10 Statistics domain (pure functions + tests)
+11 Dashboard UI: /stats, filters, best/worst, round list
+12 Charts, "where I lose strokes" breakdowns, backup nudge
+
+V0.3
+13 GPS field test page + decisions from a real round
+14 Weather per round
+15 Course geometry: coordinates and "mark point" tool
+
+V0.4
+16 Shot model, club bag, data layer, backup and Excel extension
+17 Shot capture UI
+
+V0.5
+18 Live distances and wind
+
+V0.7 (first part)
+19 Shot and weather analytics in the dashboard
+
+20 Second real-round test and polish
+```
+
+Each conversation starts from `docs/STATUS.md` and the relevant files, has a single goal, and ends with committed work plus updated docs. Phases 13–20 are outlined only; each block is detailed at the start of its first phase.
+
+---
+
+## 24. CODE GENERATION RULES
+
+- Provide complete files when practical, with clear file paths.
+- Do not omit code with placeholders such as `// rest of code`.
+- Do not invent APIs or npm packages. State each package and why it is needed.
+- Use TypeScript strict mode; avoid `any`.
+- Keep naming, imports, and file locations consistent.
+- Keep UI and business logic separated. Avoid duplicated functionality and unnecessary global state.
+- Avoid hardcoding data unnecessarily.
+
+---
+
+## 25. SECURITY AND PRIVACY
+
+No user account. Golf data stays on the device unless explicitly exported by the user. No analytics, tracking, or advertising unless explicitly requested.
+
+Location: GPS fixes are stored only on the device, inside the user's own rounds and backups. Weather requests (Open-Meteo) use the **course** coordinates, never the user's position. Future cloud features must be designed with privacy in mind.
+
+---
+
+## 26. FINAL PRODUCT PRINCIPLE
+
+Build a golf tracker that is actually pleasant to use during a round.
+
+It is better to have a small app that works reliably on the course than a large app that gets in the way of the game.
+
+=== docs/STATUS.md ===
+# Project Status
+
+_Paste this file at the start of every new conversation, together with the files relevant to the current phase._
+
+## Current version
+V0.1 done and deployed. Current block: V0.1.x + V0.2 (export all, history and dashboard).
+
+## Current phase
+**Phase 10 — Statistics domain (pure functions + tests)** (next up)
+
+## Phases
+
+V0.1
+- [x] 0. Planning
+- [x] 1. Environment, repo and deployment
+- [x] 2. Domain and tests
+- [x] 3. Data layer
+- [x] 4. UI skeleton (Home, New round)
+- [x] 5. Hole tracking screen
+- [x] 6. Summary and finish round
+- [x] 7. Excel export and JSON backup
+- [x] 8. Polish and real-round test
+
+V0.1.x / V0.2
+- [x] 9. Export all rounds to one Excel file
+- [x] 10. Statistics domain (pure functions + tests)
+- [ ] 11. Dashboard UI: `/stats`, filters, best/worst, round list
+- [ ] 12. Charts, "where I lose strokes" breakdowns, backup nudge
+
+V0.3
+- [ ] 13. GPS field test page + decisions from a real round
+- [ ] 14. Weather per round
+- [ ] 15. Course geometry: coordinates and "mark point" tool
+
+V0.4
+- [ ] 16. Shot model, club bag, data layer, backup and Excel extension
+- [ ] 17. Shot capture UI
+
+V0.5
+- [ ] 18. Live distances and wind
+
+V0.7 (first part)
+- [ ] 19. Shot and weather analytics in the dashboard
+
+- [ ] 20. Second real-round test and polish
+
+Phases 13–20 are outlined only; each block is detailed at the start of its first phase (see docs/roadmap.md).
+
+## Key decisions (see docs/decisions.md)
+
+- PWA on iPhone; no Mac, no Apple Developer account.
+- TypeScript + React + Vite + Dexie + SheetJS + Vitest, hosted on GitHub Pages.
+- Courses from bundled `src/data/courses.json`.
+- Per hole: score, putts, fairway, penalties, bunker, up & down, GIR (3-putt derived).
+- Rounds of 9 or 18 holes; 9-hole rounds start at hole 1 or 10.
+- Totals derived from holes, never stored.
+- Dashboard reads Dexie directly; JSON is only backup (D23). Export all = one file, fixed name, finished rounds only (D24).
+- Statistics rules for 9/18, incomplete and in-progress rounds (D25); V0.2 scope (D26); `/stats` route (D27); plain SVG charts (D30).
+- Roadmap re-cut: V0.3 environment (GPS test, weather, course geometry), V0.4 shots and clubs, V0.5 live distances and wind (D31).
+- GPS = one fix per tap, never continuous (D32). Course geometry captured by the user in-app (D33). Weather from Open-Meteo with the course coordinates (D34).
+- Elevation/slope discarded (D35). Distances in meters (D36). Shot tracking optional; `score` stays the truth (D37).
+- Every phase that adds data extends backup and export (D38).
+
+## Phase 2 results (domain)
+
+- `src/domain/types.ts`, `calculations.ts`, `validation.ts` implemented; 26 Vitest tests passing (`tests/`).
+- `tsc -b` and `npm run lint` clean. CI build and deploy to GitHub Pages working.
+- Choices made in phase 2:
+  - Stats count only "played" holes (those with a saved score).
+  - Percentages are 0-100, unrounded, and `null` when the denominator is 0.
+  - `validateHole` has two modes: `requireScore: false` for autosave drafts, `true` for "Save & next".
+  - `score` is total strokes including penalties; `penaltyStrokes` is a separate stat.
+
+## Phase 3 results (data layer)
+
+- Added dependencies: `dexie` (IndexedDB), `fake-indexeddb` (dev, tests only).
+- Implemented `src/data/db.ts` (Dexie schema v1: `rounds`, `holes`), `roundRepository.ts`, `courseRepository.ts`, and `courses.json` (real course: Club de Golf Retamares).
+- 50 Vitest tests passing (26 domain + 24 data). `tsc -b` and `npm run lint` clean.
+- Schema documented in `docs/database.md`.
+- Choices made in phase 3:
+  - Repositories are factories (`createRoundRepository(db, clock)`) so tests use an isolated database and a deterministic clock; the app uses the default instances.
+  - All hole rows are created when the round is created (`score: null` = not yet saved), in one transaction with the round.
+  - Initial hole values: `fairway` is `null` on par 3 and `false` otherwise; `upAndDown` is `null`; everything else `0`/`false`.
+  - `saveHole` overwrites an existing hole and bumps `Round.updatedAt`. It does NOT validate; the hook decides the validation mode.
+  - `createRound` rejects an unknown tee and a hole range that doesn't fit the course, writing nothing.
+  - `courses.json` is validated at load (`validateCourses`): unique ids, 9/18 holes, consecutive hole numbers, par 3-6, at least one tee.
+  - `finishRound` is idempotent and allows unplayed holes (see D16).
+  - `getInProgressRound` returns the most recently updated in-progress round.
+- `crypto.randomUUID()` needs a secure context (HTTPS or localhost). Over a LAN IP on the iPhone, creating a round will fail; test saving on the deployed site, or add a UUID fallback.
+
+## Phase 4 results (UI skeleton)
+
+- Added dependency: `react-router-dom` (HashRouter).
+- Home: "Continuar ronda" (if in progress) + "Nueva ronda"; keeps online status and build time from phase 1.
+- New Round: course, tee, range (full / front / back); warns if a round is already in progress; the old round is NOT deleted.
+- Added `domain/resume.ts` + 5 tests.
+- Fix after iPhone test: links styled as buttons showed Safari's purple `:visited` colour; added explicit `a.btn-*:visited` rules, 12px gap between options and a yellow + ✓ selected state. Tested on the deployed site: OK.
+
+## Phase 5 results (hole tracking)
+
+- Stepper, YesNoToggle and HoleProgress components, `useHoleForm` hook with debounced, ordered autosave (flush on `visibilitychange` / `pagehide`), and the hole tracking screen.
+- Fairway is forced to `null` on par 3; autosave validates with `requireScore: false`, "Save & next" with `requireScore: true`.
+
+## Phase 6 results (summary and finish round)
+
+- `unplayedHoles` in `domain/calculations.ts`, `domain/format.ts` (`formatToPar`, `formatPercentage`), `hooks/useRoundSummary.ts`, and the real `pages/RoundSummary.tsx`. 4 new tests in `tests/summary.test.ts`.
+- Light, high-contrast theme (white background, black buttons, yellow/orange warnings). Colours are variables in `:root` of `index.css`.
+- Finishing with unplayed holes is allowed after an inline confirmation that names them (D16). Finished rounds stay editable (D15).
+
+## Phase 7 results (Excel export, rounds list, JSON backup)
+
+- Added dependency: SheetJS 0.20.3, vendored in `vendor/` (D17). Verified against the SheetJS docs: the npm registry copy is outdated.
+- Data layer: `listRoundsWithHoles`, `deleteRound`, `importRound` in `roundRepository.ts`; `RoundWithHoles` type in the domain. Schema unchanged (v1).
+- Services: `filenames.ts` (slug, local date), `excelExport.ts` (pure row builders + workbook + file), `shareFile.ts` (injectable decision logic, real browser wiring on top), `backup.ts` (create, strict `parseBackup`, `restoreBackup`).
+- UI: `/rounds` screen (`pages/Rounds.tsx`, `hooks/useRounds.ts`) with open, inline-confirmed delete, "Guardar copia" and "Restaurar copia"; "Mis rondas" link on Home; "Exportar a Excel" button on the summary.
+- Removed the duplicate `navigator.storage.persist()` call from `main.tsx`; `services/storagePersistence.ts` is the single place.
+- `docs/decisions.md`: duplicated D13/D14 renumbered (now D13-D16); D17-D21 added for this phase.
+- 134 Vitest tests passing. `tsc -b` and `npm run lint` clean. Export and backup/restore checked manually on the desktop browser (xlsx opens in Excel with correct sheets, totals and empty cells; backup restore skips existing rounds).
+- Choices made in phase 7: see D17-D21. In short: only played holes are exported, restore never overwrites, delete is always confirmed, files are built synchronously so the iOS share sheet keeps the tap gesture.
+- `npm run build` warns that the main chunk is over 500 kB (about 723 kB, 233 kB gzipped) because of SheetJS. Expected and harmless (precached for offline use).
+- Checked on the iPhone (deployed site): share sheet and file save for the Excel and the JSON backup, restore of the `.json` from Files (existing rounds skipped), and offline operation in airplane mode. Note: the `.xlsx` cannot be restored; only the `.json` backup can (the file picker greys out other files by design).
+
+## Phase 8 results (polish and real-round test)
+
+- Theme colours aligned to the light theme; status bar style `default` (D22).
+- `.muted` and similar text now use a solid colour (`--muted`); warning/ok text darkened.
+- Chunk-size warning limit raised to 800 kB with a comment (D22).
+- Added `docs/real-round-checklist.md`.
+- Update prompt ("new version available") verified on the iPhone.
+- Real round on the course: under 10 s per hole, one-hand use OK, readable in sunlight, data survived screen lock and app switching, GIR suggestion accurate, no recording problems.
+- Phase closed. The real pain found: one Excel file per round and no view of all rounds together; this starts the next block.
+
+## Phase 9 results (export all)
+
+- `selectRoundsForExport`, `buildAllRoundsWorkbook`, `createAllRoundsExcelFile` and `ALL_ROUNDS_FILENAME` in `services/excelExport.ts`; the single-round workbook now shares `workbookFromRows` with it.
+- "Exportar todo a Excel" on `/rounds`: finished rounds only, ascending by date (then createdAt, then id), fixed filename `golf-tracker-todas-las-rondas.xlsx`. Built synchronously from the rounds already in memory (D21). No new dependencies, schema unchanged.
+- Tests in `tests/excelExportAll.test.ts` (ordering, in-progress excluded, 9/18 holes, back nine numbering, unplayed holes, empty cells, file round trip).
+- Checked on the iPhone (deployed site): share sheet opens on the first tap, file saves to Files, "Replace" works with the fixed name. (Ajusta esta línea si algo salió distinto.)
+
+## Phase 10 results (statistics domain)
+
+- `src/domain/stats.ts` (pure, built on `calculations.ts`) and `tests/stats.test.ts`. No new dependencies, schema unchanged.
+- Choices: `roundLevel` is `null` until a 9/18 length is chosen (D25); best/worst by score to par, ties to the earliest round; complete round = finished, `holes.length === numberOfHoles`, all played; hole-level `rounds` = finished rounds with at least one played hole; course name from the latest round.
+- Every figure carries its sample size (`Rate`, `PerHole`, `HoleStats.holes`, `RoundLevelStats.rounds`).
+
+## Planning results for the V0.1.x / V0.2 block (second phase 0)
+
+- New decisions D23-D38 in `docs/decisions.md`; `PROMPT.md` (sections 1, 2, 3, 6-9, 12, 13, 16-20, 23, 25), `docs/roadmap.md` and `docs/architecture.md` updated.
+- Order of work chosen by the user: export all first, then the dashboard, then GPS / weather / clubs.
+- Slope/elevation discarded (D35). Distances in meters (D36).
+- Open items: backup nudge values and storage location (D28), whether restore needs a "replace with confirmation" option (D29), OpenStreetMap research (D33), Open-Meteo terms check (D34).
+
+## Environment
+
+- OS: Windows (no Mac)
+- Editor: VS Code
+- Project folder: `C:\golf-tracker\golf-tracker`
+- Repo: https://github.com/Neilburt5/golf-tracker
+- Deployed URL: https://neilburt5.github.io/golf-tracker/
+
+## Open problems
+
+- (none)
+
+## Known limitations
+
+- (D13) Continue round opens the first unplayed hole even after editing an earlier one.
+- (D19) Restoring an in-progress round can change which round "Continue round" opens.
+- (D29) Restore never overwrites: edits to an existing round do not reach another device's copy.
+- `crypto.randomUUID()` needs a secure context (only matters when testing over a LAN IP); optional fallback not implemented.
+
+## Next conversation template
+
+> We are in phase 11 (Dashboard UI). Phases 0-10 are done and deployed/committed; the V0.2 planning is in PROMPT.md, docs/roadmap.md and decisions D23-D38. I attach one file with PROMPT.md, STATUS.md, decisions.md, architecture.md, database.md, roadmap.md, the domain files (`types.ts`, `calculations.ts`, `format.ts`, `stats.ts`), `roundRepository.ts`, `useRounds.ts`, `Rounds.tsx`, `Home.tsx`, `main.tsx`, `App.tsx` and `index.css`.
+>
+> Goal: build the first version of the dashboard at `/stats` (D27), reading Dexie through `listRoundsWithHoles` and computing everything with `calculateStats` from `domain/stats.ts` (D23). Scope for this phase:
+> - `hooks/useStats.ts`: loads rounds, holds the filter state (course, 9/18; default 18 holes, all courses), exposes loading/error state and the `Stats` result. No business rules in the hook or the page.
+> - Course options for the filter: add a small pure function in `domain/stats.ts` (distinct courses of finished rounds, name from the latest round, with round count) plus Vitest tests. This is the only domain change.
+> - `pages/Stats.tsx`: filter controls (course select, 9/18 segmented control); general cards (finished rounds, average score, average score to par, average putts, GIR %, fairway %, up & down %, 3-putts per hole, penalties per hole) each showing its sample size (e.g. "GIR 41% · 108 hoyos"); best and worst round cards that open the existing `/round/:id/summary`; list of finished rounds for the current filter, newest first, each opening the same summary. When no 9/18 length is chosen, round-level cards show a clear hint instead of numbers (roundLevel is null). Empty states: no finished rounds, no rounds for the filter, fewer than 3 rounds ("pocas rondas: las cifras no son concluyentes").
+> - "Estadísticas" button on Home and the `/stats` route; no existing route changes.
+> - Responsive layout (phone and desktop), same light high-contrast theme and CSS variables as the rest of the app, large touch targets. The in-round screens must not be touched.
+> - Out of scope for this phase: charts, breakdowns by par / hole / course, putts with/without GIR, backup nudge (all phase 12). No new dependencies, schema unchanged.
+>
+> UI language is Spanish; code, comments and commits in English. Follow section 23 of the prompt: explain what we build, which files change, implement with complete files, explain how to test (including checking it on the deployed iPhone site and on desktop), list potential issues, and wait for my feedback. At the end, give me the STATUS.md block for phase 11 and the commit commands.
+
+=== docs/decisions.md ===
+# Technical Decisions
+
+Format: **Decision**, **Reason**, and alternatives where relevant.
+
+---
+
+## D1 — Build a PWA instead of a native iOS app
+
+**Decision:** The app is a Progressive Web App installed on the iPhone from Safari.
+
+**Reason:** The developer has no Mac and does not want to pay for an Apple Developer account. .NET MAUI (iOS) and SwiftUI both require a Mac with Xcode to build and sign. A PWA can be developed on Windows/Linux, hosted for free, works offline, and installs to the home screen.
+
+**Trade-offs:** No haptic feedback, no background execution, and iOS may evict storage of rarely used web apps. Mitigated by installing to the home screen, requesting persistent storage, and providing a JSON backup.
+
+**Future option:** Wrap with Capacitor if a Mac and developer account become available.
+
+---
+
+## D2 — TypeScript + React + Vite instead of Blazor WebAssembly
+
+**Decision:** Use TypeScript, React, and Vite.
+
+**Reason:** IndexedDB, file sharing, and the service worker live in the browser, so some JavaScript would be needed even with Blazor. TypeScript has mature libraries for IndexedDB (Dexie) and Excel (SheetJS), a lighter first load, simpler PWA update handling, and far more documentation for mobile PWAs. The V0.1 scope is small, so the cost of learning TypeScript coming from C# is low.
+
+**Alternative considered:** Blazor WebAssembly (C#), which would reuse existing C# experience but has a heavier initial download and less PWA/IndexedDB documentation.
+
+---
+
+## D3 — Dexie (IndexedDB) instead of SQLite
+
+**Decision:** Persist locally with Dexie on IndexedDB, keeping a relational structure (Round → Hole).
+
+**Reason:** IndexedDB is native to browsers and works offline without extra runtimes. In-browser SQLite (WASM) adds complexity and weight not justified for V0.1. The relational modelling principle from the original prompt is preserved: no whole-round JSON blobs.
+
+---
+
+## D4 — Courses live in a bundled `courses.json`
+
+**Decision:** Courses are maintained by the user in `src/data/courses.json` and bundled with the app. There is no course table and no course editor in V0.1.
+
+**Reason:** Entering pars on a phone is slow and error-prone; editing a JSON in VS Code is easy. Bundling (rather than fetching from `public/`) guarantees availability offline. Rounds store a snapshot of the course name and pars, so the JSON can change freely.
+
+---
+
+## D5 — Totals are derived, never stored
+
+**Decision:** Round totals and statistics are computed from hole data on demand.
+
+**Reason:** Editing a previous hole can never leave stale totals. Calculation logic lives in `domain/` and is reused by the summary, export, history, and analytics.
+
+---
+
+## D6 — Snapshot par and course name in rounds and holes
+
+**Decision:** `Hole.par` and `Round.courseName` are copied at round creation.
+
+**Reason:** Historical rounds must not change if a course definition is corrected later.
+
+---
+
+## D7 — Hole data recorded in V0.1
+
+**Decision:** Score, putts, fairway, penalty strokes, bunker, up & down, and GIR. 3-putt is derived from putts (`putts >= 3`). GIR is auto-suggested as `score - putts <= par - 2` and can be corrected with one tap.
+
+**Reason:** Matches the original specification while minimizing taps during play. Fairway is `null` for par 3; up & down is `null` when there was no opportunity.
+
+---
+
+## D8 — Support 9-hole rounds on 18-hole courses, first or last nine
+
+**Decision:** A round has `numberOfHoles` (9 or 18) and `startHole` (1 or 10).
+
+**Reason:** The user sometimes plays the front nine and sometimes the back nine. Hole numbers are stored as real course hole numbers (1–9 or 10–18) so analysis by hole stays correct.
+
+---
+
+## D9 — HashRouter
+
+**Decision:** Use React Router with `HashRouter`.
+
+**Reason:** GitHub Pages cannot serve deep links for single-page apps.
+
+---
+
+## D10 — Excel export format: one row = one hole
+
+**Decision:** Two sheets (`ROUND`, `HOLES`), no merged cells or decoration, booleans as 1/0, "not applicable" as empty cells, delivered through the iOS share sheet with a download fallback.
+
+**Reason:** Analysis-friendly data for Excel, Power BI, and pandas. The dataset is treated as a long-term asset.
+
+---
+
+## D11 — Project organized in phases, one conversation per phase
+
+**Decision:** Work is split into phases, each with a verifiable deliverable, tracked in `docs/STATUS.md`. GitHub is the source of truth, not the chat history.
+
+**Reason:** Keeps conversations focused, avoids very long threads, and ensures nothing is lost if a conversation ends.
+
+---
+
+## D12 — Offline behaviour is verified only on the HTTPS deployment
+
+**Decision:** Offline testing is done against the published GitHub Pages site.
+
+**Reason:** Service workers require HTTPS. The local dev server over a LAN IP cannot be used to validate offline behaviour on iOS. This is why deployment to the iPhone is phase 1.
+
+---
+
+## D13 — Resume hole is derived, not stored
+
+**Decision:** "Continue round" opens the first hole without a saved score, or the last hole if all have one (`domain/resume.ts`).
+
+**Reason:** Avoids a stored "current hole" that could go stale; consistent with D5.
+
+**Limitation:** If the user goes back to edit an earlier hole and closes the app, Continue still opens the first unplayed hole.
+
+---
+
+## D14 — Hole range as a single control
+
+**Decision:** New Round offers "18 holes / Front nine / Back nine" (only "9 holes" on a 9-hole course) instead of separate 9/18 and which-nine controls.
+
+**Reason:** One tap, and "back nine on a 9-hole course" is impossible by construction.
+
+---
+
+## D15 — Finished rounds stay editable in V0.1
+
+**Decision:** A finished round can still be corrected from its summary.
+
+**Reason:** Totals are derived, so corrections are always consistent, and fixing a typo after the round is a real need. An explicit lock/unlock is revisited with History in V0.2.
+
+---
+
+## D16 — Finishing with unplayed holes is allowed after confirmation
+
+**Decision:** The confirmation names the holes without score; they do not count in statistics.
+
+**Reason:** Blocking would force inventing data; silently allowing it would hide a mistake.
+
+---
+
+## D17 — SheetJS is vendored from the SheetJS CDN
+
+**Decision:** SheetJS 0.20.3 is installed from a tarball committed to `vendor/` (`"xlsx": "file:vendor/xlsx-0.20.3.tgz"`). Only `utils`, `write` and `read` are imported (named imports).
+
+**Reason:** The `xlsx` package on the npm registry is outdated (0.18.5); the SheetJS CDN is the authoritative source. Vendoring keeps the GitHub Actions build independent of the CDN and is what the SheetJS docs recommend for stability.
+
+**Trade-offs:** Updating SheetJS means downloading a new tarball by hand. The library makes the main bundle about 720 kB (about 233 kB gzipped), which triggers Vite's chunk-size warning. It is downloaded once and precached for offline use; code-splitting was rejected because the library would have to load before the tap handler runs (see D21).
+
+**Alternative considered:** ExcelJS (not needed).
+
+---
+
+## D18 — Export contents: played holes only, percentages 0-100
+
+**Decision:** The HOLES sheet has one row per played hole (holes with a saved score). The ROUND row uses the same played holes. Percentages are 0-100, unrounded, and an empty cell when there is nothing to divide by. Dates are text `YYYY-MM-DD` in local time.
+
+**Reason:** Consistent with the statistics rule from phase 2. Rows for unplayed holes would be full of empty cells that look like data. Text dates do not depend on the locale of Excel, and pandas/Power BI parse them without trouble.
+
+---
+
+## D19 — Backup restore never overwrites and validates before writing
+
+**Decision:** A backup is `{ app, schemaVersion, exportedAt, rounds: [{ round, holes }] }`. Restoring first validates the whole file (`parseBackup`, unknown fields dropped), then inserts round by round. A round whose id already exists is skipped, never overwritten. Each round is written in one transaction, so a failing round leaves nothing behind and does not stop the others. The UI reports imported / already existed / failed.
+
+**Reason:** Golf data is a long-term asset (prompt section 20). A restore must never destroy newer edits, and a damaged or foreign file must never leave half a round in the database.
+
+**Limitation:** Restoring an `in_progress` round makes it a candidate for "Continue round" (the most recently updated one wins).
+
+---
+
+## D20 — Rounds list with inline-confirmed deletion
+
+**Decision:** `/rounds` lists every round, newest first, and is the only place where rounds are deleted. Deleting needs an inline confirmation that names the round, warns that it cannot be undone and suggests a backup first. No `window.confirm`.
+
+**Reason:** Prompt section 20: never silently delete data, confirm destructive actions. It also gives access to finished and abandoned in-progress rounds that were unreachable before. The inline pattern matches "Finalizar ronda".
+
+---
+
+## D21 — Files are built synchronously and shared straight from the tap
+
+**Decision:** `createExcelFile` and `createBackupFile` are synchronous and work on data already in memory. The tap handler calls `shareFile` without awaiting anything first. `shareFile` uses `navigator.share` with a file when `canShare` allows it, treats closing the share sheet (`AbortError`) as "cancelled" (no download), and falls back to a download on any other failure.
+
+**Reason:** iOS Safari only opens the share sheet while the tap is still a fresh user gesture; awaiting a database read first can make it fail. The fallback guarantees an export is never lost silently.
+
+---
+
+## D22 — Light theme colours everywhere; chunk-size warning silenced on purpose
+
+**Decision:** `theme_color` / `background_color` and `<meta name="theme-color">` are `#ffffff`. The iOS status bar style is `default` (dark text), not `black-translucent`. Secondary text uses a solid `--muted` colour instead of `opacity`. `build.chunkSizeWarningLimit` is 800 kB.
+
+**Reason:** `black-translucent` draws white status bar text, invisible on a white page. Solid colours stay readable in sunlight and do not compound when nested. The only chunk over 500 kB is the SheetJS bundle (D17), precached once for offline use, so the warning carries no information; the raised limit still warns if the bundle grows unexpectedly.
+
+---
+
+# Block V0.1.x / V0.2 and the re-cut roadmap (planning after V0.1)
+
+## D23 — The dashboard reads Dexie directly; JSON is only backup and transfer
+
+**Decision:** The in-app dashboard computes everything from `listRoundsWithHoles` (IndexedDB) through pure functions in `domain/`. The JSON file is never an intermediate step: a finished round is already in the database and appears in the dashboard immediately. At finish the app offers "Guardar copia" in one tap, never forced.
+
+**Reason:** Data is persisted from the first tap, so a "pass to JSON then to dashboard" step would only add a failure point. iOS web apps cannot silently write or append to files anyway.
+
+**Rejected:** Dashboard fed from exported JSON/Excel files (manual, error-prone, duplicates data); an automatic backup on finish (not possible on iOS without a user gesture and share sheet).
+
+---
+
+## D24 — Export all rounds: one file, fixed name, finished rounds only
+
+**Decision:** Phase 9 adds "Export all" on `/rounds`: one `.xlsx` with the same `ROUND` (one row per round) and `HOLES` (one row per played hole) sheets, all finished rounds, ascending by date, fixed filename. It reuses the existing pure row builders. Single-round export from the summary stays. In-progress rounds are excluded (their data is incomplete; consistent with D25).
+
+**Reason:** Solves "one new Excel per round" with a small change. With the same filename the user can choose "Replace" in Files. Later versions add sheets (e.g. SHOTS) without altering existing ones.
+
+**Rejected:** Appending rows to an existing file (impossible for a web app on iOS); a File System Access based approach (not available in iOS Safari).
+
+---
+
+## D25 — Statistics rules for 9/18-hole, incomplete and in-progress rounds
+
+**Decision:**
+- In-progress rounds are excluded from all statistics.
+- Round-level metrics (total score, score to par, total putts, per-round averages, best/worst) use finished rounds with every hole played, and 9-hole and 18-hole rounds are never averaged together (a selector chooses which).
+- Hole-level rates (GIR %, fairway %, up & down %, 3-putts per hole, penalties per hole, score to par by par type / hole number / course) use all played holes of finished rounds, including finished rounds with unplayed holes (D16).
+- Percentages follow D18 (0–100, unrounded, `null` when the denominator is 0). Every figure shows how many rounds/holes it is based on.
+
+**Reason:** Mixing 9 and 18 holes distorts totals; per-hole rates are comparable and make the most of partial rounds without inventing data.
+
+**Rejected:** Normalizing everything per hole (hides round totals the golfer cares about); excluding incomplete rounds from rates (wastes real data).
+
+---
+
+## D26 — V0.2 scope
+
+**Decision:** IN: general statistics, course and 9/18 filters, best/worst round, evolution chart, breakdown by par type, hole number and course, putts with/without GIR, round list opening the existing summary, last-backup date and nudge. OUT: Strokes Gained, handicap, anything needing data not recorded in V0.1, cloud, accounts, in-app course editing.
+
+**Reason:** Solves the real problem (all rounds in one place, general and per-round view) with data already recorded. "Where do I lose strokes" is answered with to-par by par type/hole/course and the rates, without inventing a methodology (Strokes Gained stays V0.6).
+
+---
+
+## D27 — Navigation: new `/stats` route, existing routes untouched
+
+**Decision:** `/stats` is added, with an "Estadísticas" button on Home. `/rounds` stays the list and management screen. Round detail from the dashboard reuses `/round/:id/summary`. No existing hash route changes.
+
+**Reason:** No new detail screen to maintain; no broken bookmarks or in-round flows.
+
+---
+
+## D28 — Backup nudge with last-backup date
+
+**Decision:** The app records the date of the last backup and nudges after N finished rounds (or X days) without one. Where the date is stored (a small Dexie settings table vs localStorage) is decided in phase 12.
+
+**Reason:** As the dataset grows, iOS storage eviction becomes the biggest risk. A reminder costs little.
+
+**Open:** N and X, and the storage location.
+
+---
+
+## D29 — The PC copy is a read-only view; restore edits do not propagate
+
+**Decision:** To view the dashboard on a computer, open the same URL and use "Restaurar copia". The computer's copy is a read-only view. Because restore never overwrites (D19), edits to a round that already exists on the computer are not applied.
+
+**Reason:** No backend or accounts (prompt section 25). The limitation is accepted for now.
+
+**Open:** A "replace existing with confirmation" option on restore may be added if the limitation hurts.
+
+---
+
+## D30 — Charts are plain SVG
+
+**Decision:** Charts are small SVG components with no chart library.
+
+**Reason:** No new dependency (prompt section 24); the needed charts are simple (line, bars). Revisit only if a chart cannot be built reasonably.
+
+---
+
+## D31 — Roadmap re-cut: V0.3 environment, V0.4 shots and clubs, V0.5 live info
+
+**Decision:** The originally separate shot-by-shot (V0.4), GPS (V0.5) and club tracking (V0.8) versions are merged into the on-course flow of V0.4 (shots + clubs + GPS point per shot) and V0.5 (live distances and wind). Weather is added to V0.3 together with a GPS field test and course geometry. V0.8 becomes advanced club analytics.
+
+**Reason:** The user's real on-course flow combines these features; building them as separate versions would produce unusable intermediate screens. The dashboard comes first so the real pain (many Excel files) is solved before the heavier work.
+
+---
+
+## D32 — GPS: one fix per user tap, never continuous tracking
+
+**Decision:** On each club selection the app stores a single GPS fix with its accuracy and timestamp. The distance of a shot is the distance between two consecutive fixes. A field test (phase 13) on the real iPhone precedes any dependency on GPS.
+
+**Reason:** JavaScript is suspended when the screen locks or the app goes to the background, so continuous tracking while walking is unreliable. Single fixes use little battery and work with the phone in the pocket. Geolocation in installed iOS PWAs has been reported to behave inconsistently with permissions, so it must be verified on the device. Phone GPS accuracy is typically several meters, so accuracy is stored and shown.
+
+**Rejected:** `watchPosition` while walking (unreliable in the background, battery cost).
+
+---
+
+## D33 — Course geometry captured by the user in-app
+
+**Decision:** Green centers and landmarks (dogleg, water) per hole are captured by the user standing at the spot with a "mark point" tool, which outputs coordinates to paste into `courses.json`. No external course database, no map tiles.
+
+**Reason:** No free, legally verified course data source is known (prompt: do not assume one exists, do not scrape). It works offline and only requires mapping the courses actually played.
+
+**Open:** OpenStreetMap golf data may be researched later; its license must be checked first.
+
+---
+
+## D34 — Weather from Open-Meteo using the course coordinates, fetched online or back-filled
+
+**Decision:** A weather snapshot per round (temperature, precipitation, pressure, wind) comes from Open-Meteo using the **course** coordinates and the round time. It is fetched when online and back-filled after the round if there was no connection. Live wind in V0.5 uses the same service. Terms of use (free for non-commercial use) are verified at phase 14.
+
+**Reason:** The service is keyless, free for non-commercial use and has current and historical endpoints. Using course coordinates means the user's position never leaves the device, and back-filling removes the dependency on coverage during the round. Wind is a 10 m grid value, not the wind at the ball, so it is shown as an orientation with its time.
+
+**Rejected:** Sending the device position; requiring a connection during the round.
+
+---
+
+## D35 — Elevation / slope is discarded
+
+**Decision:** The "elevation difference from here to the hole" feature is not planned.
+
+**Reason:** Phone GPS altitude is usually too imprecise for differences of a few meters, and Safari does not expose a barometer. Promising it would mislead club choice.
+
+**Rejected:** Experimental version with an accuracy warning; hand-entered tee/green altitudes (low value for the effort).
+
+---
+
+## D36 — Distances in meters
+
+**Decision:** All distances are in meters.
+
+**Reason:** User preference; no unit toggle needed.
+
+---
+
+## D37 — Shot tracking is optional per hole; `score` stays the source of truth
+
+**Decision:** Shot capture can be skipped on any hole. The recorded shots plus putts and penalties are compared with `score`; a mismatch is shown but never blocks saving. Selecting the putter hands over to the existing hole screen, and putts are still entered with the existing stepper.
+
+**Reason:** Speed over completeness (prompt section 3); the golfer may forget a tap, and data must never be lost or blocked by a reconciliation rule.
+
+---
+
+## D38 — Every phase that adds stored data extends backup and export
+
+**Decision:** In the same phase that adds data, the JSON backup (still accepting older `schemaVersion` files), the Excel export (new sheets/columns, existing ones unchanged) and their tests are extended. Dexie changes always add a new `version(n)` block with migration.
+
+**Reason:** Prevents data that exists in the app but not in backups, which is the biggest risk as the dataset grows.
+
+---
+
+## Open items
+
+- D28: values of N and X for the backup nudge, and where the last-backup date is stored (phase 12).
+- D29: whether restore needs a "replace existing with confirmation" option.
+- D33: whether OpenStreetMap golf data is worth researching (check license first).
+- D34: verify Open-Meteo terms of use in phase 14.
+
+=== docs/architecture.md ===
+# Architecture
+
+## Overview
+
+Golf Tracker is an offline-first PWA built with TypeScript, React, and Vite. It runs on an iPhone installed from Safari, stores all data locally in IndexedDB (via Dexie), exports rounds to Excel on the device, and (from V0.2) shows history and statistics in an in-app dashboard.
+
+## Layers
+
+Dependencies flow in one direction only:
+
+```text
+UI (pages, components)
+      ↓
+Hooks (view-model logic, autosave)
+      ↓
+Domain (pure TS)     Data (Dexie + repositories)
+```
+
+| Layer | Folder | Responsibility | May import |
+|---|---|---|---|
+| UI | `src/pages`, `src/components` | Render and capture touches. No business rules. | hooks, domain types |
+| Hooks | `src/hooks` | State, orchestration, autosave, navigation between holes, view-models for summary, rounds list and dashboard | domain, data |
+| Domain | `src/domain` | Types, calculations, validation, statistics. No React, no IndexedDB. | nothing |
+| Data | `src/data` | Dexie schema, repositories, bundled `courses.json` | domain types |
+| Services | `src/services` | Excel export, file sharing, JSON backup, storage persistence (later: weather, geolocation wrappers) | domain, data |
+
+The domain layer is the long-term asset: the round summary, Excel export, history, dashboard and analytics all reuse the same calculation functions.
+
+## Folder structure
+
+```text
+src/
+├── pages/         Home, NewRound, HoleTracking, RoundSummary, Rounds, Stats
+├── components/    Stepper, YesNoToggle, HoleProgress, SVG charts, ...
+├── hooks/         useHoleForm, useRoundSummary, useRounds, useStats, ...
+├── domain/        types.ts, calculations.ts, validation.ts, resume.ts, format.ts, stats.ts
+├── data/          db.ts, roundRepository.ts, courseRepository.ts, courses.json
+├── services/      excelExport.ts, shareFile.ts, backup.ts, filenames.ts, storagePersistence.ts
+└── main.tsx
+```
+
+## Navigation
+
+`HashRouter` (GitHub Pages cannot serve deep links).
+
+```text
+/                  Home
+/new               New round (course, tee, range)
+/round/:id/hole/:n Hole tracking
+/round/:id/summary Summary, finish, export (also the round detail from the dashboard)
+/rounds            Rounds list: open, delete (confirmed), export all, backup, restore
+/stats             Dashboard (V0.2)
+```
+
+```text
+Home → New round → Hole 1 ↔ Hole 2 ↔ … ↔ Hole N → Summary → Finish → Export
+                       ↑                    (Summary ↔ any hole to correct)
+Home "Continue round" reopens the first unplayed hole of the in-progress round
+Home → Mis rondas (/rounds) → open round summary / export all / backup / restore
+Home → Estadísticas (/stats) → general stats, filters, charts → open round summary
+```
+
+No existing route changes when the dashboard is added (D27).
+
+## Data flow and autosave
+
+1. Every change on the hole screen updates local form state immediately.
+2. After a short debounce, the change is written to IndexedDB through `roundRepository`.
+3. "Save & next" forces an immediate write before navigating.
+4. The round remains `in_progress` until the user confirms "Finish round".
+5. On app start, Home queries for an `in_progress` round and offers "Continue round".
+
+Totals are never stored. They are computed from the holes on demand, so editing a previous hole can never leave stale totals.
+
+## Dashboard (V0.2)
+
+```text
+roundRepository.listRoundsWithHoles
+          ↓
+domain/stats.ts  (pure functions, built on domain/calculations.ts)
+          ↓
+hooks/useStats.ts  (loading, filters: course, 9/18)
+          ↓
+pages/Stats.tsx + SVG chart components
+```
+
+- The dashboard reads Dexie directly; the JSON file is only a backup (D23).
+- `domain/stats.ts` applies the rules of D25: in-progress rounds excluded; round-level metrics from complete finished rounds with 9 and 18 holes kept apart; hole-level rates from all played holes of finished rounds; every figure carries its sample size.
+- Aggregations: general averages and rates, best/worst round, score-to-par series over time, breakdown by par type, hole number and course, putts with and without GIR.
+- Scale: hundreds of rounds are a few thousand hole rows, so loading everything in memory is fine. The schema stays at v1 and no new index is needed for V0.2.
+- Charts are plain SVG components, no chart library (D30).
+- Layout is responsive (phone and desktop). The in-round screens are not touched.
+- Last backup date and a nudge after N rounds without a backup are added in phase 12 (D28).
+
+## Courses
+
+Courses are read from `src/data/courses.json`, bundled into the app so they are always available offline. When a round is created, the course name and the par of each hole are copied into the round (snapshot), so later edits to the JSON never alter past rounds.
+
+From V0.3 the course data gains coordinates: the course location (for weather) and, per hole, the green center and landmarks captured with the in-app "mark point" tool (D33).
+
+## Planned evolution (V0.3–V0.5)
+
+Outline only; each block is detailed at the start of its first phase.
+
+- **GPS test page (phase 13):** logs single fixes with accuracy to verify permissions, screen lock behaviour and accuracy on the real iPhone before building on GPS (D32).
+- **Weather (phase 14):** a weather snapshot per round, from Open-Meteo using the course coordinates; fetched when online and back-filled later (D34). Lives in `services/weather.ts` behind a thin wrapper so the rest of the app only sees domain types. Failure never blocks a round.
+- **Shots (phases 16–17):** a `shots` table linked to `Hole` (club, GPS fix, accuracy, timestamp) and a club bag setting. Shot distance is derived from consecutive fixes. `Hole.score` remains the source of truth (D37). Shot capture is optional per hole and hands over to the existing hole screen at the putter.
+- **Live info (phase 18):** distance to green and landmarks from the stored coordinates, wind with headwind/crosswind relative to the line ball→green, with accuracy and age indicators and an offline fallback.
+- **Persistence:** each new table or field adds a new Dexie `version(n)` with migration. The backup `schemaVersion` is bumped and older files are still accepted. Export gains new sheets (e.g. one row per shot) without changing existing ones (D38).
+- **Privacy:** GPS fixes stay on the device. Weather requests use the course coordinates, never the user's position (D34).
+- **Not planned:** elevation/slope (D35).
+
+## PWA
+
+- `vite-plugin-pwa` generates the manifest and the service worker (precaching app shell and assets).
+- The user is shown a prompt when a new version is available.
+- The app requests persistent storage (`navigator.storage.persist()`), in `services/storagePersistence.ts` only.
+- Layout respects iOS safe areas (`viewport-fit=cover`, `env(safe-area-inset-*)`).
+- Theme colours are light and solid for outdoor readability (D22).
+
+## Excel export
+
+`services/excelExport.ts` builds a workbook with SheetJS: sheet `ROUND` (one row per round) and sheet `HOLES` (one row per played hole). The row-building logic is pure and unit-tested; writing the file and sharing it (`navigator.share`, fallback to download) are thin wrappers. Two modes: one round from its summary, and all finished rounds in one file with a fixed filename from `/rounds` (D24).
+
+## Testing
+
+Vitest for domain calculations, statistics, validation, repositories (with `fake-indexeddb`), backup parsing (old and new `schemaVersion`), and export row generation. No UI tests.
+
+## Known risks
+
+1. iOS may evict IndexedDB for rarely used sites. Mitigation: installed PWA, persistent storage request, JSON backup, backup nudge (D28).
+2. Service worker can serve stale versions. Mitigation: update prompt.
+3. Offline behaviour can only be tested on the HTTPS deployment.
+4. Screen may lock during a round. Wake Lock is optional and unreliable in installed PWAs.
+5. Restore never overwrites, so edits to an existing round do not reach another device's copy (D29).
+6. GPS permission behaviour in installed iOS PWAs is inconsistent and JavaScript stops when the screen locks; verified before use (D32).
+7. GPS accuracy is several meters, so shot distances are approximate and always shown with their accuracy.
+8. Wind from the weather service is a grid value at 10 m, not the wind at the ball.
+9. Statistics from few rounds are not conclusive; sample sizes are always shown.
+
+=== docs/database.md ===
+# Database (Dexie / IndexedDB)
+
+Database name: `golf-tracker`, schema version 1 (unchanged in phase 7).
+
+| Table  | Primary key | Indexes                         |
+|--------|-------------|---------------------------------|
+| rounds | `id`        | `status`, `date`, `updatedAt`   |
+| holes  | `id`        | `roundId`, unique `[roundId+holeNumber]` |
+
+- Round (1) → (*) Hole. Totals are never stored (D5).
+- `courseName` and `par` are snapshots taken at round creation (D6).
+- All hole rows are created when the round is created, with `score: null` meaning "not yet saved".
+- Round + holes are created in a single transaction.
+- Courses are not in the database; they come from `src/data/courses.json` (D4).
+- Schema changes require a new `this.version(n).stores(...)` block, never an edit of version 1.
+
+## Repository operations (`roundRepository`)
+
+| Operation | Notes |
+|---|---|
+| `createRound` | Round + all holes in one transaction. Rejects unknown tee or a hole range that does not fit the course. |
+| `getRound`, `getHoles` | Holes ordered by hole number. |
+| `getInProgressRound` | Most recently updated in-progress round. |
+| `listRoundsWithHoles` | Every round with its holes, newest first (by date, then `updatedAt`). One read transaction. Used by the rounds list and the backup. |
+| `saveHole` | Overwrites an existing hole, bumps `Round.updatedAt`. Does not validate. |
+| `finishRound` | Idempotent. Allows unplayed holes (D16). |
+| `deleteRound` | Deletes the round and its holes in one transaction. Idempotent. Always behind a UI confirmation (D20). |
+| `importRound` | Insert only. Returns `'skipped'` if the round id already exists, never overwrites. Rolls back if the holes cannot be written. |
+
+## Backup file format (JSON)
+
+```json
+{
+  "app": "golf-tracker",
+  "schemaVersion": 1,
+  "exportedAt": "2026-04-01T12:00:00.000Z",
+  "rounds": [{ "round": { }, "holes": [ ] }]
+}
+```
+
+- `round` and `holes` use exactly the `Round` and `Hole` types of `domain/types.ts`.
+- `schemaVersion` is the version of the backup format, independent from the Dexie schema version. A file with a newer `schemaVersion` than the app supports is rejected.
+- Each round must contain exactly its own holes (`startHole` to `startHole + numberOfHoles - 1`, one each). Hole ids and round ids must be unique within the file.
+- Restore rules: see D19.
+
+=== docs/roadmap.md ===
+# Roadmap
+
+## Current version
+
+**V0.1 — done and deployed.** Current block: **V0.1.x + V0.2** (export all, history and dashboard).
+
+## Versions
+
+| Version | Goal | Status |
+|---|---|---|
+| V0.1 | Basic round tracker: play a full round, review, save locally, export to Excel, JSON backup | Done |
+| V0.1.x | Export all rounds to one Excel file | Next |
+| V0.2 | History and dashboard (in-app statistics) | Planned |
+| V0.3 | Environment and course data: GPS field test, weather per round, course geometry | Planned |
+| V0.4 | Shots and clubs: club per shot, GPS point per shot | Planned |
+| V0.5 | Live on-course info: distance to green and landmarks, wind | Planned |
+| V0.6 | Strokes Gained (needs a documented reference methodology) | Planned |
+| V0.7 | Advanced performance analytics (first part: shot and weather analytics in phase 19) | Planned |
+| V0.8 | Advanced club analytics | Planned |
+| V0.9 | Training recommendations | Planned |
+| V1.0 | Personal golf analytics platform (sync, accounts, dashboards, optional AI) | Planned |
+
+The roadmap was re-cut after V0.1 (D31). The originally separate shot-by-shot (V0.4), GPS (V0.5) and club tracking (V0.8) versions are merged into the V0.4/V0.5 on-course flow, weather is new, and elevation/slope was discarded (D35).
+
+## Phases
+
+| # | Phase | Deliverable | Status |
+|---|---|---|---|
+| 0 | Planning | PROMPT.md, architecture, roadmap, decisions, status | Done |
+| 1 | Environment, repo, deployment | Empty PWA on GitHub Pages, installed on iPhone, opens offline | Done |
+| 2 | Domain and tests | `types`, `calculations`, `validation`, passing Vitest suite | Done |
+| 3 | Data layer | Dexie schema, repositories, `courses.json` loader, repository tests | Done |
+| 4 | UI skeleton | Home and New round, routing, round creation | Done |
+| 5 | Hole tracking | Fast hole screen, back/forward navigation, autosave, restore | Done |
+| 6 | Summary and finish | Totals and stats, correct previous holes, finish with confirmation, continue round | Done |
+| 7 | Excel and backup | `.xlsx` export, iOS share sheet, JSON backup/restore, rounds list | Done |
+| 8 | Polish and real-round test | Theme/contrast polish, checklist, one real round on the course | Done |
+| 9 | Export all rounds | One `.xlsx` with every finished round, fixed filename, button in `/rounds`, tests on the generated rows | Next |
+| 10 | Statistics domain | `domain/stats.ts`: aggregates, 9/18 separation, incomplete/in-progress rules, by par type / hole / course, trend series; Vitest suite; no UI | Pending |
+| 11 | Dashboard UI | `/stats` with general cards, course and 9/18 filters, best/worst round, round list opening the existing summary; "Estadísticas" button on Home | Pending |
+| 12 | Charts and breakdowns | Plain-SVG charts (score-to-par evolution, par-type, hole-number, putts with/without GIR); last-backup date and nudge | Pending |
+| 13 | GPS field test | Hidden test page logging fixes with accuracy; checks permission behaviour, screen lock, accuracy on the course; decisions recorded | Pending |
+| 14 | Weather per round | Course coordinates, Open-Meteo fetch online and back-fill after the round; shown in summary, Excel, dashboard; schema migration | Pending |
+| 15 | Course geometry | Green centers and landmarks per hole; in-app "mark point" tool that outputs coordinates for `courses.json` | Pending |
+| 16 | Shot data layer | `Shot` table, club bag settings, validation and reconciliation with score, backup and Excel (SHOTS sheet) extension; tests, no UI | Pending |
+| 17 | Shot capture UI | Choose club, store GPS point, putter hands over to the hole screen; edit/delete shots; works without GPS permission | Pending |
+| 18 | Live distances and wind | Distance to green and landmarks, headwind/crosswind, accuracy and age indicators, offline fallback | Pending |
+| 19 | Shot and weather analytics | Average distance per club, left/right relative to the line to the green, weather effects with visible sample sizes | Pending |
+| 20 | Second real-round test and polish | Field checklist, findings turned into fixes | Pending |
+
+Phases 13–20 are outlined; each block is detailed at the start of its first phase.
+
+## Deferred or discarded
+
+- Deferred: Strokes Gained (V0.6), handicap and stroke index, tee distances, training recommendations, cloud sync and accounts, native iOS packaging (needs a Mac and Apple Developer account).
+- Discarded: elevation difference "from here to the hole" (phone GPS altitude is unreliable and Safari has no barometer; D35).
+- Not possible on iOS web: appending rows to an existing Excel file (D24).
+
+## Backlog from real use
+
+Findings from real rounds go here.
+
+- Phase 8 real round: under 10 s per hole, one-hand use fine, readable in sunlight, data survived screen lock and app switching, GIR suggestion accurate, no recording problems. Pain point that started V0.1.x/V0.2: one Excel file per round.
+
+=== src/domain/types.ts ===
+export type NumberOfHoles = 9 | 18;
+export type StartHole = 1 | 10;
+export type RoundStatus = 'in_progress' | 'finished';
+
+export interface CourseHole {
+  number: number;
+  par: number;
+}
+
+export interface Course {
+  id: string;
+  name: string;
+  location: string;
+  numberOfHoles: NumberOfHoles;
+  tees: string[];
+  holes: CourseHole[];
+}
+
+export interface Round {
+  id: string;
+  courseId: string;
+  courseName: string; // snapshot
+  date: string; // ISO
+  tee: string;
+  numberOfHoles: NumberOfHoles;
+  startHole: StartHole;
+  status: RoundStatus;
+  createdAt: string; // ISO
+  updatedAt: string; // ISO
+}
+
+export interface Hole {
+  id: string;
+  roundId: string;
+  holeNumber: number;
+  par: number; // snapshot
+  score: number | null; // null = not yet saved
+  putts: number;
+  fairway: boolean | null; // null = not applicable (par 3)
+  gir: boolean;
+  penaltyStrokes: number;
+  bunker: boolean;
+  upAndDown: boolean | null; // null = no opportunity
+}
+
+/**
+ * Derived statistics. Never stored (see decisions D5).
+ * Only holes with a saved score ("played" holes) are counted.
+ * Percentages are 0-100 (unrounded), or null when there is nothing to divide by.
+ */
+export interface RoundStats {
+  holesPlayed: number;
+  totalScore: number;
+  totalPar: number;
+  scoreToPar: number;
+  totalPutts: number;
+  fairwaysHit: number;
+  fairwayOpportunities: number;
+  girCount: number;
+  girPercentage: number | null;
+  penaltyStrokes: number;
+  bunkers: number;
+  upAndDownAttempts: number;
+  upAndDownMade: number;
+  upAndDownPercentage: number | null;
+  threePutts: number;
+}
+/** A round together with all of its holes. Used by the rounds list and by backups. */
+export interface RoundWithHoles {
+  round: Round;
+  holes: Hole[];
+}
+
+=== src/domain/calculations.ts ===
+import type { Hole, RoundStats } from './types';
+
+type PlayedHole = Hole & { score: number };
+
+/** A hole counts as played once it has a saved score. */
+export function isPlayed(hole: Hole): hole is PlayedHole {
+  return hole.score !== null;
+}
+
+/** Holes that still have no saved score, in the order given. */
+export function unplayedHoles(holes: readonly Hole[]): Hole[] {
+  return holes.filter((h) => !isPlayed(h));
+}
+
+/** Suggested GIR: reached the green in (par - 2) strokes or fewer. */
+export function suggestGir(score: number, putts: number, par: number): boolean {
+  return score - putts <= par - 2;
+}
+
+export function isThreePutt(hole: Pick<Hole, 'putts'>): boolean {
+  return hole.putts >= 3;
+}
+
+/** Score relative to par for one hole, or null if the hole has no score yet. */
+export function holeScoreToPar(hole: Hole): number | null {
+  return isPlayed(hole) ? hole.score - hole.par : null;
+}
+
+/** Real course hole numbers for a round, e.g. startHole 10, 9 holes -> [10..18]. */
+export function holeNumbersFor(startHole: number, numberOfHoles: number): number[] {
+  return Array.from({ length: numberOfHoles }, (_, i) => startHole + i);
+}
+
+/** part / total as 0-100, or null when total is 0. */
+export function percentage(part: number, total: number): number | null {
+  return total === 0 ? null : (part / total) * 100;
+}
+
+export function calculateRoundStats(holes: readonly Hole[]): RoundStats {
+  const played = holes.filter(isPlayed);
+
+  const totalScore = sum(played.map((h) => h.score));
+  const totalPar = sum(played.map((h) => h.par));
+
+  const fairwayHoles = played.filter((h) => h.fairway !== null);
+  const upAndDownHoles = played.filter((h) => h.upAndDown !== null);
+
+  const girCount = played.filter((h) => h.gir).length;
+  const upAndDownMade = upAndDownHoles.filter((h) => h.upAndDown === true).length;
+
+  return {
+    holesPlayed: played.length,
+    totalScore,
+    totalPar,
+    scoreToPar: totalScore - totalPar,
+    totalPutts: sum(played.map((h) => h.putts)),
+    fairwaysHit: fairwayHoles.filter((h) => h.fairway === true).length,
+    fairwayOpportunities: fairwayHoles.length,
+    girCount,
+    girPercentage: percentage(girCount, played.length),
+    penaltyStrokes: sum(played.map((h) => h.penaltyStrokes)),
+    bunkers: played.filter((h) => h.bunker).length,
+    upAndDownAttempts: upAndDownHoles.length,
+    upAndDownMade,
+    upAndDownPercentage: percentage(upAndDownMade, upAndDownHoles.length),
+    threePutts: played.filter(isThreePutt).length,
+  };
+}
+
+function sum(values: number[]): number {
+  return values.reduce((acc, v) => acc + v, 0);
+}
+
+=== src/domain/format.ts ===
+/** "+2", "-1", "Par"; undefined when there is no value yet. */
+export function formatToPar(value: number | null): string | undefined {
+  if (value === null) return undefined;
+  if (value === 0) return 'Par';
+  return value > 0 ? `+${value}` : `${value}`;
+}
+
+/** 0-100 value as "43%"; "—" when there is nothing to divide by. */
+export function formatPercentage(value: number | null): string {
+  return value === null ? '—' : `${Math.round(value)}%`;
+}
+
+=== src/domain/stats.ts ===
+import { calculateRoundStats, isPlayed, percentage } from './calculations';
+import type { Hole, NumberOfHoles, Round, RoundWithHoles } from './types';
+
+/**
+ * Dashboard statistics. Pure functions over RoundWithHoles[]; no React, no IndexedDB.
+ *
+ * Rules (decisions D25, D18):
+ * - In-progress rounds are excluded from everything.
+ * - Round-level metrics use finished rounds with every hole played ("complete"),
+ *   and 9-hole and 18-hole rounds are never mixed.
+ * - Hole-level rates use every played hole of finished rounds, including finished
+ *   rounds that still have unplayed holes (D16).
+ * - Percentages are 0-100, unrounded, and null when the denominator is 0.
+ * - Every figure carries its sample size.
+ */
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface StatsFilter {
+  courseId: string | null; // null = all courses
+  numberOfHoles: NumberOfHoles | null; // null = both (round-level metrics need one length)
+}
+
+export const NO_FILTER: Readonly<StatsFilter> = Object.freeze({
+  courseId: null,
+  numberOfHoles: null,
+});
+
+/** count out of total, e.g. GIR 7 of 18. */
+export interface Rate {
+  count: number;
+  total: number;
+  percentage: number | null;
+}
+
+/** count over a number of played holes, e.g. 4 three-putts in 36 holes. */
+export interface PerHole {
+  count: number;
+  holes: number;
+  perHole: number | null;
+}
+
+/** Hole-level figures for any group of played holes. `holes` is the sample size. */
+export interface HoleStats {
+  holes: number;
+  averageScoreToPar: number | null;
+  averagePutts: number | null;
+  gir: Rate;
+  fairways: Rate;
+  upAndDown: Rate;
+  threePutts: PerHole;
+  penalties: PerHole;
+}
+
+/** Hole-level figures plus how many finished rounds (with at least one played hole) they come from. */
+export interface HoleLevelStats extends HoleStats {
+  rounds: number;
+}
+
+export interface RoundResult {
+  roundId: string;
+  date: string;
+  courseId: string;
+  courseName: string;
+  numberOfHoles: NumberOfHoles;
+  totalScore: number;
+  totalPar: number;
+  scoreToPar: number;
+  totalPutts: number;
+}
+
+export interface RoundLevelStats {
+  numberOfHoles: NumberOfHoles;
+  /** Sample size: complete finished rounds of this length. */
+  rounds: number;
+  averageScore: number | null;
+  averageScoreToPar: number | null;
+  averagePutts: number | null;
+  /** Lowest score to par. Ties go to the earliest round. */
+  best: RoundResult | null;
+  /** Highest score to par. Ties go to the earliest round. */
+  worst: RoundResult | null;
+  /** Oldest first. This is the score-to-par series over time. */
+  results: RoundResult[];
+}
+
+export interface ParBreakdown {
+  par: number;
+  stats: HoleStats;
+}
+
+export interface HoleNumberBreakdown {
+  holeNumber: number;
+  stats: HoleStats;
+}
+
+export interface CourseBreakdown {
+  courseId: string;
+  /** Name snapshot of the most recent round on this course. */
+  courseName: string;
+  rounds: number;
+  stats: HoleStats;
+}
+
+export interface PuttsAverage {
+  holes: number;
+  totalPutts: number;
+  averagePutts: number | null;
+}
+
+export interface PuttsByGir {
+  withGir: PuttsAverage;
+  withoutGir: PuttsAverage;
+}
+
+export interface Stats {
+  filter: StatsFilter;
+  /** Finished rounds left after filtering (0 means "show an empty state"). */
+  finishedRounds: number;
+  /** null when the filter does not select 9 or 18 holes. */
+  roundLevel: RoundLevelStats | null;
+  holes: HoleLevelStats;
+  byPar: ParBreakdown[];
+  byHoleNumber: HoleNumberBreakdown[];
+  byCourse: CourseBreakdown[];
+  puttsByGir: PuttsByGir;
+}
+
+// ---------------------------------------------------------------------------
+// Round selection and filters
+// ---------------------------------------------------------------------------
+
+export function isFinishedRound(rw: RoundWithHoles): boolean {
+  return rw.round.status === 'finished';
+}
+
+/** Finished, with exactly the expected number of holes and every one played. */
+export function isCompleteRound(rw: RoundWithHoles): boolean {
+  return (
+    isFinishedRound(rw) &&
+    rw.holes.length === rw.round.numberOfHoles &&
+    rw.holes.every(isPlayed)
+  );
+}
+
+/** Course and 9/18 filter. Does not look at status; the stats functions do. */
+export function filterRounds(
+  rounds: readonly RoundWithHoles[],
+  filter: Readonly<StatsFilter>,
+): RoundWithHoles[] {
+  return rounds.filter(
+    (rw) =>
+      (filter.courseId === null || rw.round.courseId === filter.courseId) &&
+      (filter.numberOfHoles === null || rw.round.numberOfHoles === filter.numberOfHoles),
+  );
+}
+
+/** Finished rounds that contribute at least one played hole to hole-level figures. */
+function holeLevelRounds(rounds: readonly RoundWithHoles[]): RoundWithHoles[] {
+  return rounds.filter(isFinishedRound).filter((rw) => rw.holes.some(isPlayed));
+}
+
+function playedHolesOf(rounds: readonly RoundWithHoles[]): Hole[] {
+  return holeLevelRounds(rounds).flatMap((rw) => rw.holes.filter(isPlayed));
+}
+
+// ---------------------------------------------------------------------------
+// Hole-level figures
+// ---------------------------------------------------------------------------
+
+/** Figures for a group of holes. Unplayed holes are ignored. */
+export function calculateHoleStats(holes: readonly Hole[]): HoleStats {
+  const s = calculateRoundStats(holes);
+  const n = s.holesPlayed;
+  return {
+    holes: n,
+    averageScoreToPar: average(s.scoreToPar, n),
+    averagePutts: average(s.totalPutts, n),
+    gir: rate(s.girCount, n),
+    fairways: rate(s.fairwaysHit, s.fairwayOpportunities),
+    upAndDown: rate(s.upAndDownMade, s.upAndDownAttempts),
+    threePutts: perHole(s.threePutts, n),
+    penalties: perHole(s.penaltyStrokes, n),
+  };
+}
+
+/** All played holes of all finished rounds given. */
+export function calculateHoleLevelStats(rounds: readonly RoundWithHoles[]): HoleLevelStats {
+  return {
+    rounds: holeLevelRounds(rounds).length,
+    ...calculateHoleStats(playedHolesOf(rounds)),
+  };
+}
+
+/** One group per par value present, ascending. */
+export function breakdownByPar(rounds: readonly RoundWithHoles[]): ParBreakdown[] {
+  return Array.from(groupBy(playedHolesOf(rounds), (h) => h.par))
+    .sort(([a], [b]) => a - b)
+    .map(([par, holes]) => ({ par, stats: calculateHoleStats(holes) }));
+}
+
+/** One group per real course hole number present (1-18), ascending. */
+export function breakdownByHoleNumber(rounds: readonly RoundWithHoles[]): HoleNumberBreakdown[] {
+  return Array.from(groupBy(playedHolesOf(rounds), (h) => h.holeNumber))
+    .sort(([a], [b]) => a - b)
+    .map(([holeNumber, holes]) => ({ holeNumber, stats: calculateHoleStats(holes) }));
+}
+
+/** One group per course id, sorted by course name. */
+export function breakdownByCourse(rounds: readonly RoundWithHoles[]): CourseBreakdown[] {
+  const groups = groupBy(holeLevelRounds(rounds), (rw) => rw.round.courseId);
+  return Array.from(groups)
+    .map(([courseId, courseRounds]) => {
+      const newest = [...courseRounds].sort((a, b) => compareChronological(a.round, b.round));
+      const latest = newest[newest.length - 1];
+      return {
+        courseId,
+        courseName: latest ? latest.round.courseName : courseId,
+        rounds: courseRounds.length,
+        stats: calculateHoleStats(courseRounds.flatMap((rw) => rw.holes)),
+      };
+    })
+    .sort((a, b) => a.courseName.localeCompare(b.courseName) || a.courseId.localeCompare(b.courseId));
+}
+
+export function puttsByGir(rounds: readonly RoundWithHoles[]): PuttsByGir {
+  const played = playedHolesOf(rounds);
+  return {
+    withGir: puttsAverage(played.filter((h) => h.gir)),
+    withoutGir: puttsAverage(played.filter((h) => !h.gir)),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Round-level figures
+// ---------------------------------------------------------------------------
+
+/**
+ * Complete finished rounds of ONE length (9 and 18 are never mixed).
+ * `results` is the score-to-par series over time, oldest first.
+ */
+export function calculateRoundLevelStats(
+  rounds: readonly RoundWithHoles[],
+  numberOfHoles: NumberOfHoles,
+): RoundLevelStats {
+  const results = rounds
+    .filter((rw) => isCompleteRound(rw) && rw.round.numberOfHoles === numberOfHoles)
+    .sort((a, b) => compareChronological(a.round, b.round))
+    .map(toRoundResult);
+
+  let best: RoundResult | null = null;
+  let worst: RoundResult | null = null;
+  for (const result of results) {
+    if (best === null || result.scoreToPar < best.scoreToPar) best = result;
+    if (worst === null || result.scoreToPar > worst.scoreToPar) worst = result;
+  }
+
+  const n = results.length;
+  return {
+    numberOfHoles,
+    rounds: n,
+    averageScore: average(sum(results.map((r) => r.totalScore)), n),
+    averageScoreToPar: average(sum(results.map((r) => r.scoreToPar)), n),
+    averagePutts: average(sum(results.map((r) => r.totalPutts)), n),
+    best,
+    worst,
+    results,
+  };
+}
+
+function toRoundResult(rw: RoundWithHoles): RoundResult {
+  const s = calculateRoundStats(rw.holes);
+  return {
+    roundId: rw.round.id,
+    date: rw.round.date,
+    courseId: rw.round.courseId,
+    courseName: rw.round.courseName,
+    numberOfHoles: rw.round.numberOfHoles,
+    totalScore: s.totalScore,
+    totalPar: s.totalPar,
+    scoreToPar: s.scoreToPar,
+    totalPutts: s.totalPutts,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Everything for the dashboard
+// ---------------------------------------------------------------------------
+
+export function calculateStats(
+  allRounds: readonly RoundWithHoles[],
+  filter: Readonly<StatsFilter> = NO_FILTER,
+): Stats {
+  const rounds = filterRounds(allRounds, filter);
+  return {
+    filter: { courseId: filter.courseId, numberOfHoles: filter.numberOfHoles },
+    finishedRounds: rounds.filter(isFinishedRound).length,
+    roundLevel:
+      filter.numberOfHoles === null
+        ? null
+        : calculateRoundLevelStats(rounds, filter.numberOfHoles),
+    holes: calculateHoleLevelStats(rounds),
+    byPar: breakdownByPar(rounds),
+    byHoleNumber: breakdownByHoleNumber(rounds),
+    byCourse: breakdownByCourse(rounds),
+    puttsByGir: puttsByGir(rounds),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function sum(values: readonly number[]): number {
+  return values.reduce((acc, v) => acc + v, 0);
+}
+
+/** total / count, or null when count is 0. */
+function average(total: number, count: number): number | null {
+  return count === 0 ? null : total / count;
+}
+
+function rate(count: number, total: number): Rate {
+  return { count, total, percentage: percentage(count, total) };
+}
+
+function perHole(count: number, holes: number): PerHole {
+  return { count, holes, perHole: average(count, holes) };
+}
+
+function puttsAverage(holes: readonly Hole[]): PuttsAverage {
+  const totalPutts = sum(holes.map((h) => h.putts));
+  return { holes: holes.length, totalPutts, averagePutts: average(totalPutts, holes.length) };
+}
+
+function groupBy<T, K>(items: readonly T[], keyOf: (item: T) => K): Map<K, T[]> {
+  const groups = new Map<K, T[]>();
+  for (const item of items) {
+    const key = keyOf(item);
+    const group = groups.get(key);
+    if (group) group.push(item);
+    else groups.set(key, [item]);
+  }
+  return groups;
+}
+
+function compareStrings(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** Oldest first: date, then createdAt, then id (same order as the export). */
+function compareChronological(a: Round, b: Round): number {
+  return (
+    compareStrings(a.date, b.date) ||
+    compareStrings(a.createdAt, b.createdAt) ||
+    compareStrings(a.id, b.id)
+  );
+}
+
+=== src/data/roundRepository.ts ===
+import { db as defaultDb, type GolfDatabase } from './db';
+import type { Course, Hole, Round, RoundWithHoles } from '../domain/types';
+
+export interface NewRoundInput {
+  course: Course;
+  tee: string;
+  numberOfHoles: 9 | 18;
+  startHole: 1 | 10;
+  /** ISO date. Defaults to now. */
+  date?: string;
+}
+
+/** Result of importing one round from a backup. */
+export type ImportResult = 'imported' | 'skipped';
+
+type Clock = () => string;
+
+const isoNow: Clock = () => new Date().toISOString();
+
+function buildHoles(
+  roundId: string,
+  course: Course,
+  startHole: number,
+  numberOfHoles: number,
+): Hole[] {
+  const holes: Hole[] = [];
+  for (let holeNumber = startHole; holeNumber < startHole + numberOfHoles; holeNumber++) {
+    const courseHole = course.holes.find((h) => h.number === holeNumber);
+    if (!courseHole) {
+      throw new Error(
+        `Course "${course.name}" has no hole ${holeNumber} ` +
+          `(startHole=${startHole}, numberOfHoles=${numberOfHoles})`,
+      );
+    }
+    holes.push({
+      id: crypto.randomUUID(),
+      roundId,
+      holeNumber,
+      par: courseHole.par,
+      score: null,
+      putts: 0,
+      fairway: courseHole.par === 3 ? null : false,
+      gir: false,
+      penaltyStrokes: 0,
+      bunker: false,
+      upAndDown: null,
+    });
+  }
+  return holes;
+}
+
+export function createRoundRepository(database: GolfDatabase, now: Clock = isoNow) {
+  async function createRound(input: NewRoundInput): Promise<Round> {
+    const { course, tee, numberOfHoles, startHole } = input;
+
+    if (!course.tees.includes(tee)) {
+      throw new Error(`Unknown tee "${tee}" for course "${course.name}"`);
+    }
+
+    const timestamp = now();
+    const round: Round = {
+      id: crypto.randomUUID(),
+      courseId: course.id,
+      courseName: course.name, // snapshot
+      date: input.date ?? timestamp,
+      tee,
+      numberOfHoles,
+      startHole,
+      status: 'in_progress',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    // Throws before touching the database if the hole range doesn't fit the course.
+    const holes = buildHoles(round.id, course, startHole, numberOfHoles);
+
+    await database.transaction('rw', database.rounds, database.holes, async () => {
+      await database.rounds.add(round);
+      await database.holes.bulkAdd(holes);
+    });
+
+    return round;
+  }
+
+  async function getRound(roundId: string): Promise<Round | undefined> {
+    return database.rounds.get(roundId);
+  }
+
+  /** Holes of a round, ordered by hole number. */
+  async function getHoles(roundId: string): Promise<Hole[]> {
+    const holes = await database.holes.where('roundId').equals(roundId).toArray();
+    return holes.sort((a, b) => a.holeNumber - b.holeNumber);
+  }
+
+  /** Most recently updated round that is still in progress, if any. */
+  async function getInProgressRound(): Promise<Round | undefined> {
+    const rounds = await database.rounds.where('status').equals('in_progress').sortBy('updatedAt');
+    return rounds[rounds.length - 1];
+  }
+
+  /**
+   * Every round with its holes (ordered by hole number), newest round first.
+   * Read in a single transaction so the list is consistent.
+   * Used by the rounds list and by the JSON backup.
+   */
+  async function listRoundsWithHoles(): Promise<RoundWithHoles[]> {
+    return database.transaction('r', database.rounds, database.holes, async () => {
+      const rounds = await database.rounds.toArray();
+      const allHoles = await database.holes.toArray();
+
+      const holesByRound = new Map<string, Hole[]>();
+      for (const hole of allHoles) {
+        const list = holesByRound.get(hole.roundId);
+        if (list) list.push(hole);
+        else holesByRound.set(hole.roundId, [hole]);
+      }
+
+      return rounds
+        .sort((a, b) => b.date.localeCompare(a.date) || b.updatedAt.localeCompare(a.updatedAt))
+        .map((round) => ({
+          round,
+          holes: (holesByRound.get(round.id) ?? []).sort((a, b) => a.holeNumber - b.holeNumber),
+        }));
+    });
+  }
+
+  /** Overwrites an existing hole row (autosave and "Save & next" both use this). */
+  async function saveHole(hole: Hole): Promise<void> {
+    await database.transaction('rw', database.rounds, database.holes, async () => {
+      const existing = await database.holes.get(hole.id);
+      if (!existing) {
+        throw new Error(`Hole ${hole.id} does not exist`);
+      }
+      if (existing.roundId !== hole.roundId || existing.holeNumber !== hole.holeNumber) {
+        throw new Error('A hole cannot be moved to another round or hole number');
+      }
+      await database.holes.put(hole);
+      await database.rounds.update(hole.roundId, { updatedAt: now() });
+    });
+  }
+
+  async function finishRound(roundId: string): Promise<Round> {
+    return database.transaction('rw', database.rounds, async () => {
+      const round = await database.rounds.get(roundId);
+      if (!round) {
+        throw new Error(`Round ${roundId} does not exist`);
+      }
+      if (round.status === 'finished') {
+        return round;
+      }
+      const finished: Round = { ...round, status: 'finished', updatedAt: now() };
+      await database.rounds.put(finished);
+      return finished;
+    });
+  }
+
+  /**
+   * Permanently deletes a round and all of its holes in one transaction.
+   * Idempotent: deleting an unknown id does nothing.
+   * The UI must ask for confirmation before calling this.
+   */
+  async function deleteRound(roundId: string): Promise<void> {
+    await database.transaction('rw', database.rounds, database.holes, async () => {
+      await database.holes.where('roundId').equals(roundId).delete();
+      await database.rounds.delete(roundId);
+    });
+  }
+
+  /**
+   * Inserts a round from a backup. NEVER overwrites: if a round with the same id
+   * already exists, nothing is written and 'skipped' is returned.
+   * Round and holes are written in one transaction, so a failure leaves nothing behind.
+   * Structural validation of the backup file happens in services/backup.ts;
+   * here we only guard the relation between the round and its holes.
+   */
+  async function importRound(data: RoundWithHoles): Promise<ImportResult> {
+    const { round, holes } = data;
+
+    if (holes.some((h) => h.roundId !== round.id)) {
+      throw new Error(`Round ${round.id} contains holes that belong to another round`);
+    }
+
+    return database.transaction('rw', database.rounds, database.holes, async () => {
+      if (await database.rounds.get(round.id)) {
+        return 'skipped' as const;
+      }
+      await database.rounds.add(round);
+      await database.holes.bulkAdd(holes);
+      return 'imported' as const;
+    });
+  }
+
+  return {
+    createRound,
+    getRound,
+    getHoles,
+    getInProgressRound,
+    listRoundsWithHoles,
+    saveHole,
+    finishRound,
+    deleteRound,
+    importRound,
+  };
+}
+
+export type RoundRepository = ReturnType<typeof createRoundRepository>;
+
+export const roundRepository = createRoundRepository(defaultDb);
+
+=== src/hooks/useRounds.ts ===
+import { useCallback, useEffect, useState } from 'react';
+import { roundRepository } from '../data/roundRepository';
+import type { RoundWithHoles } from '../domain/types';
+import {
+  parseBackup,
+  restoreBackup,
+  type BackupErrorCode,
+  type RestoreSummary,
+} from '../services/backup';
+
+export type RoundsLoadState = 'loading' | 'ready' | 'error';
+
+export type RestoreOutcome =
+  | { kind: 'done'; summary: RestoreSummary }
+  | { kind: 'invalid'; code: BackupErrorCode }
+  | { kind: 'unreadable' };
+
+type Result = { status: 'ready'; rounds: RoundWithHoles[] } | { status: 'error' };
+
+/** View-model for the rounds list: loading, deleting and restoring backups. */
+export function useRounds() {
+  const [result, setResult] = useState<Result | null>(null);
+  const [reloadCount, setReloadCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const rounds = await roundRepository.listRoundsWithHoles();
+        if (!cancelled) setResult({ status: 'ready', rounds });
+      } catch {
+        if (!cancelled) setResult({ status: 'error' });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadCount]);
+
+  const reload = useCallback(() => setReloadCount((count) => count + 1), []);
+
+  /** Permanently deletes a round. The page asks for confirmation first. Returns false on failure. */
+  const remove = useCallback(
+    async (roundId: string): Promise<boolean> => {
+      try {
+        await roundRepository.deleteRound(roundId);
+        reload();
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [reload],
+  );
+
+  /** Validates the whole file first, then inserts missing rounds. Never overwrites. */
+  const restore = useCallback(
+    async (file: File): Promise<RestoreOutcome> => {
+      let text: string;
+      try {
+        text = await file.text();
+      } catch {
+        return { kind: 'unreadable' };
+      }
+
+      const parsed = parseBackup(text);
+      if (!parsed.ok) return { kind: 'invalid', code: parsed.code };
+
+      const summary = await restoreBackup(parsed.backup, roundRepository);
+      reload();
+      return { kind: 'done', summary };
+    },
+    [reload],
+  );
+
+  const loadState: RoundsLoadState = result ? result.status : 'loading';
+
+  return {
+    loadState,
+    rounds: result?.status === 'ready' ? result.rounds : [],
+    remove,
+    restore,
+  };
+}
+
+=== src/pages/Rounds.tsx ===
+import { useRef, useState, type ChangeEvent } from 'react';
+import { Link } from 'react-router-dom';
+import { BigButton, BigLink } from '../components/BigButton';
+import { calculateRoundStats } from '../domain/calculations';
+import { formatToPar } from '../domain/format';
+import type { RoundWithHoles } from '../domain/types';
+import { useRounds, type RestoreOutcome } from '../hooks/useRounds';
+import { createBackupFile, type BackupErrorCode, type RestoreSummary } from '../services/backup';
+import { createAllRoundsExcelFile, selectRoundsForExport } from '../services/excelExport';
+import { shareFile } from '../services/shareFile';
+
+type Message = { tone: 'ok' | 'error'; text: string };
+
+function plural(count: number, one: string, many: string): string {
+  return count === 1 ? `1 ${one}` : `${count} ${many}`;
+}
+
+const BACKUP_ERRORS: Record<BackupErrorCode, string> = {
+  not_json: 'El archivo no es una copia de seguridad válida.',
+  wrong_app: 'Este archivo no es una copia de seguridad de Golf Tracker.',
+  unsupported_version:
+    'Esta copia es de una versión más nueva de la app. Actualiza la app e inténtalo de nuevo.',
+  invalid_structure: 'El archivo está dañado o incompleto. No se ha importado nada.',
+};
+
+function restoreSummaryText(summary: RestoreSummary): string {
+  const parts = [
+    plural(summary.imported, 'ronda importada', 'rondas importadas'),
+    summary.skipped === 1 ? '1 ya existía' : `${summary.skipped} ya existían`,
+  ];
+  if (summary.failed > 0) {
+    parts.push(plural(summary.failed, 'no se pudo importar', 'no se pudieron importar'));
+  }
+  return parts.join(', ') + '.';
+}
+
+function restoreMessage(outcome: RestoreOutcome): Message {
+  switch (outcome.kind) {
+    case 'done':
+      return {
+        tone: outcome.summary.failed > 0 ? 'error' : 'ok',
+        text: restoreSummaryText(outcome.summary),
+      };
+    case 'invalid':
+      return { tone: 'error', text: BACKUP_ERRORS[outcome.code] };
+    case 'unreadable':
+      return { tone: 'error', text: 'No se pudo leer el archivo.' };
+  }
+}
+
+interface RoundRowProps {
+  data: RoundWithHoles;
+  onDelete: (roundId: string) => Promise<boolean>;
+}
+
+function RoundRow({ data, onDelete }: RoundRowProps) {
+  const { round, holes } = data;
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const stats = calculateRoundStats(holes);
+  const date = new Date(round.date).toLocaleDateString('es-ES');
+  const inProgress = round.status === 'in_progress';
+  const scoreText =
+    stats.holesPlayed > 0
+      ? `${stats.totalScore} (${formatToPar(stats.scoreToPar)})`
+      : 'Sin score';
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    setFailed(false);
+    const ok = await onDelete(round.id);
+    // On success the row disappears, so there is no state left to update.
+    if (!ok) {
+      setDeleting(false);
+      setFailed(true);
+    }
+  };
+
+  return (
+    <div className="stack">
+      <Link to={`/round/${round.id}/summary`} className="summary-row">
+        <span>
+          <strong>{round.courseName}</strong>
+          <br />
+          <span className="muted">
+            {date} · {round.tee}
+          </span>
+        </span>
+        <span>
+          <strong>{scoreText}</strong>
+          <br />
+          <span className="muted">
+            {inProgress ? 'En curso' : 'Finalizada'} · {stats.holesPlayed}/{round.numberOfHoles}
+          </span>
+        </span>
+      </Link>
+
+      {!confirming && (
+        <BigButton variant="secondary" onClick={() => setConfirming(true)}>
+          Eliminar
+        </BigButton>
+      )}
+
+      {confirming && (
+        <section className="warning">
+          <strong>¿Eliminar esta ronda?</strong>
+          <p className="muted">
+            Se borrarán la ronda de {round.courseName} del {date} y todos sus hoyos
+            {inProgress ? ' (está en curso)' : ''}. No se puede deshacer. Si dudas, guarda antes
+            una copia de seguridad.
+          </p>
+          {failed && (
+            <p className="error" role="alert">
+              No se pudo eliminar. Inténtalo de nuevo.
+            </p>
+          )}
+          <div className="actions-row">
+            <BigButton variant="secondary" disabled={deleting} onClick={() => setConfirming(false)}>
+              Cancelar
+            </BigButton>
+            <BigButton disabled={deleting} onClick={handleDelete}>
+              {deleting ? 'Eliminando…' : 'Sí, eliminar'}
+            </BigButton>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+export function Rounds() {
+  const { loadState, rounds, remove, restore } = useRounds();
+  const [message, setMessage] = useState<Message | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const exportableCount = selectRoundsForExport(rounds).length;
+  const inProgressCount = rounds.filter((r) => r.round.status === 'in_progress').length;
+
+  // No await before shareFile: iOS only opens the share sheet while the tap is still fresh.
+  const handleBackup = async () => {
+    const { blob, filename } = createBackupFile(rounds.map((r) => r));
+    const outcome = await shareFile(blob, filename);
+    if (outcome === 'shared') setMessage({ tone: 'ok', text: 'Copia compartida.' });
+    if (outcome === 'downloaded') setMessage({ tone: 'ok', text: 'Copia descargada.' });
+  };
+
+  // No await before shareFile: iOS only opens the share sheet while the tap is still fresh.
+  const handleExportAll = async () => {
+    const { blob, filename } = createAllRoundsExcelFile(rounds);
+    const outcome = await shareFile(blob, filename);
+    if (outcome === 'shared') setMessage({ tone: 'ok', text: 'Excel compartido.' });
+    if (outcome === 'downloaded') setMessage({ tone: 'ok', text: 'Excel descargado.' });
+  };
+
+  const handleFileChosen = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.target;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    setRestoring(true);
+    setMessage(null);
+    const outcome = await restore(file);
+    setMessage(restoreMessage(outcome));
+    setRestoring(false);
+    input.value = ''; // lets the same file be chosen again
+  };
+
+  return (
+    <div className="screen">
+      <header>
+        <h1 className="title">Mis rondas</h1>
+      </header>
+
+      {loadState === 'loading' && <p className="muted">Cargando…</p>}
+
+      {loadState === 'error' && (
+        <p role="alert" className="error">
+          No se pudieron leer las rondas guardadas.
+        </p>
+      )}
+
+      {loadState === 'ready' && rounds.length === 0 && (
+        <p className="muted">Todavía no hay rondas guardadas.</p>
+      )}
+
+      {loadState === 'ready' && rounds.length > 0 && (
+        <section className="stack" aria-label="Rondas">
+          {rounds.map((data) => (
+            <RoundRow key={data.round.id} data={data} onDelete={remove} />
+          ))}
+        </section>
+      )}
+
+      <section className="stack">
+        <h2 className="subtitle">Excel</h2>
+        <p className="muted">
+          Un solo archivo con todas las rondas finalizadas ({exportableCount}).
+          {inProgressCount > 0 && ` Las rondas en curso no se incluyen (${inProgressCount}).`}{' '}
+          El archivo siempre se llama igual: al guardarlo en Archivos puedes elegir «Reemplazar».
+        </p>
+        <BigButton
+          variant="secondary"
+          disabled={loadState !== 'ready' || exportableCount === 0}
+          onClick={handleExportAll}
+        >
+          Exportar todo a Excel
+        </BigButton>
+        {message && (
+          <p role="status" className={message.tone === 'error' ? 'error' : 'badge'}>
+            {message.text}
+          </p>
+        )}
+      </section>
+
+      <section className="stack">
+        <h2 className="subtitle">Copia de seguridad</h2>
+        <p className="muted">
+          Guarda todas tus rondas en un archivo. Al restaurar nunca se sobrescribe nada: las rondas
+          que ya existen se dejan como están.
+        </p>
+        <BigButton
+          variant="secondary"
+          disabled={loadState !== 'ready' || rounds.length === 0}
+          onClick={handleBackup}
+        >
+          Guardar copia
+        </BigButton>
+        <BigButton variant="secondary" disabled={restoring} onClick={() => fileInput.current?.click()}>
+          {restoring ? 'Restaurando…' : 'Restaurar copia'}
+        </BigButton>
+        <input
+          ref={fileInput}
+          type="file"
+          accept="application/json,.json"
+          hidden
+          onChange={handleFileChosen}
+        />
+        {message && (
+          <p role="status" className={message.tone === 'error' ? 'error' : 'badge'}>
+            {message.text}
+          </p>
+        )}
+      </section>
+
+      <BigLink to="/" variant="secondary">
+        Inicio
+      </BigLink>
+    </div>
+  );
+}
+
+=== src/pages/Home.tsx ===
+import { ActiveRoundCard } from '../components/ActiveRoundCard';
+import { BigLink } from '../components/BigButton';
+import { useActiveRound } from '../hooks/useActiveRound';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
+
+export function Home() {
+  const active = useActiveRound();
+  const online = useOnlineStatus();
+  const hasActiveRound = active.status === 'ready' && active.round !== null;
+
+  return (
+    <div className="screen">
+      <h1 className="title">Golf Tracker</h1>
+
+      {active.status === 'loading' && <p className="muted">Cargando…</p>}
+
+      {active.status === 'error' && (
+        <p role="alert" className="error">
+          No se pudo leer la ronda guardada: {active.message}
+        </p>
+      )}
+
+      {active.status === 'ready' && active.round && (
+        <section className="stack">
+          <ActiveRoundCard round={active.round} holeNumber={active.resumeHoleNumber} />
+          <BigLink to={`/round/${active.round.id}/hole/${active.resumeHoleNumber}`}>
+            Continuar ronda
+          </BigLink>
+        </section>
+      )}
+
+      <BigLink to="/new" variant={hasActiveRound ? 'secondary' : 'primary'}>
+        Nueva ronda
+      </BigLink>
+
+      <BigLink to="/rounds" variant="secondary">
+        Mis rondas
+      </BigLink>
+
+      <footer className="footer">
+        <span className={online ? 'status online' : 'status offline'}>
+          {online ? 'Con conexión' : 'Sin conexión'}
+        </span>
+        <span className="build">Build: {__BUILD_TIME__}</span>
+      </footer>
+    </div>
+  );
+}
+
+=== src/main.tsx ===
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import App from './App'
+import { requestPersistentStorage } from './services/storagePersistence'
+import './index.css'
+
+void requestPersistentStorage()
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
+
+=== src/App.tsx ===
+import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { UpdatePrompt } from './components/UpdatePrompt'
+import { HoleTracking } from './pages/HoleTracking'
+import { Home } from './pages/Home'
+import { NewRound } from './pages/NewRound'
+import { RoundSummary } from './pages/RoundSummary'
+import { Rounds } from './pages/Rounds'
+
+export default function App() {
+  return (
+    <HashRouter>
+      <main className="app">
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/new" element={<NewRound />} />
+          <Route path="/rounds" element={<Rounds />} />
+          <Route path="/round/:roundId/hole/:holeNumber" element={<HoleTracking />} />
+          <Route path="/round/:roundId/summary" element={<RoundSummary />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </main>
+      <UpdatePrompt />
+    </HashRouter>
+  )
+}
+
+=== src/index.css ===
+:root {
+  --bg: #ffffff;
+  --fg: #111111;
+  --surface: #f2f2f2;
+  --line: rgba(0, 0, 0, 0.45);
+  --line-soft: rgba(0, 0, 0, 0.25);
+  --warn: #f59e0b;
+  --warn-bg: #fff4d6;
+  --muted: #404040;
+  --warn-text: #92400e;
+  --ok: #166534;
+  --ok-bg: #e6f4ea;
+  color-scheme: light;
+  box-sizing: border-box;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+*, *::before, *::after { box-sizing: inherit; }
+
+html, body, #root { height: 100%; margin: 0; background: var(--bg); }
+
+.app { padding: 20px; max-width: 520px; margin: 0 auto; }
+.screen { display: flex; flex-direction: column; gap: 20px; }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.title { font-size: 2rem; margin: 16px 0 0; }
+.muted { color: var(--muted); margin: 0; }
+.error { color: var(--warn-text); font-weight: 700; margin: 0; }
+
+.status { font-size: 1rem; font-weight: 700; }
+.status.online { color: var(--ok); }
+.status.offline { color: var(--warn-text); }
+.build { font-size: 0.8rem; color: var(--muted); margin: 0; }
+.footer { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
+
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 64px;
+  padding: 0 20px;
+  font-size: 1.25rem;
+  font-weight: 800;
+  text-decoration: none;
+  text-align: center;
+  border-radius: 14px;
+  border: 2px solid var(--fg);
+  cursor: pointer;
+}
+.btn-primary { background: var(--fg); color: #ffffff; }
+.btn-secondary { background: var(--bg); color: var(--fg); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  font-size: 1.1rem;
+}
+
+.field { border: 0; margin: 0; padding: 0; }
+.field legend { font-size: 0.9rem; font-weight: 700; padding: 0; margin-bottom: 8px; }
+button { font: inherit; color: inherit; -webkit-appearance: none; appearance: none; }
+a.btn-primary, a.btn-primary:visited { color: #ffffff; }
+a.btn-secondary, a.btn-secondary:visited { color: var(--fg); }
+
+.options { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+.option {
+  min-height: 60px;
+  padding: 0 12px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--fg);
+  background: var(--bg);
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  cursor: pointer;
+}
+.option[aria-pressed='true'] {
+  background: var(--fg);
+  color: #ffffff;
+  border-color: var(--fg);
+}
+.option[aria-pressed='true']::before { content: '✓ '; }
+
+.banner {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--fg);
+  color: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.banner span { flex: 1; font-weight: 600; }
+.banner button {
+  min-height: 44px;
+  padding: 0 16px;
+  font-size: 1rem;
+  font-weight: 700;
+  border: 0;
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--fg);
+}
+.banner button.secondary { background: #444444; color: #ffffff; }
+
+/* ---- Hole tracking (phase 5) ---- */
+.hole-header { display: flex; justify-content: space-between; align-items: flex-end; }
+.hole-meta { display: flex; flex-direction: column; align-items: flex-end; font-size: 1.1rem; }
+
+.progress { display: grid; grid-template-columns: repeat(9, 1fr); gap: 6px; }
+.dot {
+  min-height: 40px;
+  padding: 0;
+  font-weight: 700;
+  color: var(--fg);
+  background: var(--bg);
+  border: 2px dashed var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.dot-played { border-style: solid; border-color: var(--ok); background: var(--ok-bg); }
+.dot-current { background: var(--fg); color: #ffffff; border-color: var(--fg); border-style: solid; }
+
+.stepper-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.stepper-label { display: flex; flex-direction: column; font-size: 1.15rem; font-weight: 700; }
+.stepper-label small { font-size: 1rem; color: var(--fg); }
+.stepper-controls { display: flex; align-items: center; gap: 8px; }
+.stepper-btn {
+  width: 72px;
+  height: 64px;
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--fg);
+  background: var(--bg);
+  border: 2px solid var(--fg);
+  border-radius: 12px;
+  cursor: pointer;
+}
+.stepper-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.stepper-value { min-width: 52px; text-align: center; font-size: 2.4rem; font-weight: 800; }
+
+.toggle-options { display: grid; gap: 10px; }
+
+.actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 0 4px;
+  background: var(--bg);
+  border-top: 1px solid var(--line-soft);
+}
+.actions-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.save-status { display: flex; justify-content: space-between; align-items: center; font-weight: 700; }
+.save-status span { margin: 0; }
+.link-btn {
+  min-height: 44px;
+  padding: 0 12px;
+  font-weight: 700;
+  color: var(--warn-text);
+  background: var(--warn-bg);
+  border: 2px solid var(--warn);
+  border-radius: 10px;
+}
+
+/* ---- Summary (phase 6) ---- */
+.subtitle { font-size: 1.1rem; margin: 1rem 0 0.5rem; }
+.badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--ok);
+  color: #ffffff;
+  font-weight: 700;
+}
+.warning {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  background: var(--warn-bg);
+  color: var(--fg);
+  border: 2px solid var(--warn);
+  border-radius: 12px;
+}
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip, .chip:visited {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 16px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 2px solid var(--warn);
+  border-radius: 999px;
+  text-decoration: none;
+  font-weight: 700;
+}
+.stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 1rem 0; }
+.stat {
+  display: grid;
+  gap: 2px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+}
+.stat-label { font-size: 0.85rem; color: var(--muted); }
+.stat-value { font-size: 1.6rem; }
+.summary-row, .summary-row:visited {
+  min-height: 52px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  text-decoration: none;
+}
+
+=== tests\Stats.test.ts ===
+import { describe, expect, it } from 'vitest';
+import {
+  NO_FILTER,
+  breakdownByCourse,
+  breakdownByHoleNumber,
+  breakdownByPar,
+  calculateHoleLevelStats,
+  calculateRoundLevelStats,
+  calculateStats,
+  filterRounds,
+  isCompleteRound,
+  puttsByGir,
+} from '../src/domain/stats';
+import type {
+  Hole,
+  NumberOfHoles,
+  RoundStatus,
+  RoundWithHoles,
+  StartHole,
+} from '../src/domain/types';
+
+// ---------------------------------------------------------------------------
+// Local helpers. Defaults: every hole par 4, score 5, 2 putts, no extras.
+// ---------------------------------------------------------------------------
+
+interface RoundOptions {
+  id: string;
+  status?: RoundStatus;
+  numberOfHoles?: NumberOfHoles;
+  startHole?: StartHole;
+  courseId?: string;
+  courseName?: string;
+  date?: string;
+}
+
+type HoleOverrides = (index: number) => Partial<Hole>;
+
+function buildRound(opts: RoundOptions, overrides: HoleOverrides = () => ({})): RoundWithHoles {
+  const numberOfHoles = opts.numberOfHoles ?? 18;
+  const startHole = opts.startHole ?? 1;
+  const date = opts.date ?? '2026-03-01';
+  const holes: Hole[] = Array.from({ length: numberOfHoles }, (_, i) => ({
+    id: `${opts.id}-h${startHole + i}`,
+    roundId: opts.id,
+    holeNumber: startHole + i,
+    par: 4,
+    score: 5,
+    putts: 2,
+    fairway: false,
+    gir: false,
+    penaltyStrokes: 0,
+    bunker: false,
+    upAndDown: null,
+    ...overrides(i),
+  }));
+  return {
+    round: {
+      id: opts.id,
+      courseId: opts.courseId ?? 'c1',
+      courseName: opts.courseName ?? 'Course One',
+      date,
+      tee: 'Amarillas',
+      numberOfHoles,
+      startHole,
+      status: opts.status ?? 'finished',
+      createdAt: `${date}T08:00:00.000Z`,
+      updatedAt: `${date}T12:00:00.000Z`,
+    },
+    holes,
+  };
+}
+
+/** Holes at the given positions get these overrides; the rest keep the defaults. */
+function bySpec(specs: Partial<Hole>[], fallback: Partial<Hole> = { score: null }): HoleOverrides {
+  return (i) => specs[i] ?? fallback;
+}
+
+// ---------------------------------------------------------------------------
+
+describe('isCompleteRound', () => {
+  it('requires finished status, the expected hole count and every hole played', () => {
+    expect(isCompleteRound(buildRound({ id: 'a' }))).toBe(true);
+    expect(isCompleteRound(buildRound({ id: 'b', status: 'in_progress' }))).toBe(false);
+    expect(
+      isCompleteRound(buildRound({ id: 'c' }, (i) => (i === 17 ? { score: null } : {}))),
+    ).toBe(false);
+
+    const missingHole = buildRound({ id: 'd' });
+    missingHole.holes.pop();
+    expect(isCompleteRound(missingHole)).toBe(false);
+  });
+});
+
+describe('filterRounds', () => {
+  const a = buildRound({ id: 'a', courseId: 'c1', numberOfHoles: 18 });
+  const b = buildRound({ id: 'b', courseId: 'c1', numberOfHoles: 9 });
+  const c = buildRound({ id: 'c', courseId: 'c2', numberOfHoles: 18 });
+  const d = buildRound({ id: 'd', courseId: 'c2', numberOfHoles: 9 });
+  const all = [a, b, c, d];
+  const ids = (rounds: RoundWithHoles[]) => rounds.map((rw) => rw.round.id);
+
+  it('returns everything without a filter', () => {
+    expect(ids(filterRounds(all, NO_FILTER))).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('filters by course', () => {
+    expect(ids(filterRounds(all, { courseId: 'c2', numberOfHoles: null }))).toEqual(['c', 'd']);
+  });
+
+  it('filters by 9 or 18 holes', () => {
+    expect(ids(filterRounds(all, { courseId: null, numberOfHoles: 9 }))).toEqual(['b', 'd']);
+    expect(ids(filterRounds(all, { courseId: null, numberOfHoles: 18 }))).toEqual(['a', 'c']);
+  });
+
+  it('combines both filters and does not touch the input', () => {
+    expect(ids(filterRounds(all, { courseId: 'c1', numberOfHoles: 9 }))).toEqual(['b']);
+    expect(ids(all.slice())).toEqual(['a', 'b', 'c', 'd']);
+    expect(ids(filterRounds(all, { courseId: 'nope', numberOfHoles: null }))).toEqual([]);
+  });
+});
+
+describe('in-progress rounds', () => {
+  it('are excluded from every figure', () => {
+    const inProgress = buildRound({ id: 'ip', status: 'in_progress' });
+    const stats = calculateStats([inProgress], { courseId: null, numberOfHoles: 18 });
+
+    expect(stats.finishedRounds).toBe(0);
+    expect(stats.roundLevel?.rounds).toBe(0);
+    expect(stats.holes.rounds).toBe(0);
+    expect(stats.holes.holes).toBe(0);
+    expect(stats.byPar).toEqual([]);
+    expect(stats.byHoleNumber).toEqual([]);
+    expect(stats.byCourse).toEqual([]);
+    expect(stats.puttsByGir.withGir.holes + stats.puttsByGir.withoutGir.holes).toBe(0);
+  });
+
+  it('do not change the figures of finished rounds around them', () => {
+    const finished = buildRound({ id: 'f' });
+    const inProgress = buildRound({ id: 'ip', status: 'in_progress' }, () => ({ score: 9 }));
+    expect(calculateStats([finished, inProgress])).toEqual(calculateStats([finished]));
+  });
+});
+
+describe('incomplete finished rounds', () => {
+  const complete = buildRound({ id: 'full', date: '2026-03-01' });
+  const incomplete = buildRound({ id: 'partial', date: '2026-03-08' }, (i) =>
+    i === 17 ? { score: null } : {},
+  );
+
+  it('are left out of round-level figures', () => {
+    const level = calculateRoundLevelStats([complete, incomplete], 18);
+    expect(level.rounds).toBe(1);
+    expect(level.results.map((r) => r.roundId)).toEqual(['full']);
+  });
+
+  it('still count in hole-level figures, with their real sample size', () => {
+    const level = calculateHoleLevelStats([complete, incomplete]);
+    expect(level.rounds).toBe(2);
+    expect(level.holes).toBe(35);
+  });
+
+  it('a finished round with no played hole contributes nothing', () => {
+    const empty = buildRound({ id: 'empty' }, () => ({ score: null }));
+    const level = calculateHoleLevelStats([empty]);
+    expect(level.rounds).toBe(0);
+    expect(level.holes).toBe(0);
+  });
+});
+
+describe('9-hole and 18-hole rounds are never mixed', () => {
+  const eighteen = buildRound({ id: 'r18', numberOfHoles: 18 }); // 90, +18
+  const nine = buildRound({ id: 'r9', numberOfHoles: 9 }); // 45, +9
+  const rounds = [eighteen, nine];
+
+  it('round-level figures use only the selected length', () => {
+    const l18 = calculateRoundLevelStats(rounds, 18);
+    expect(l18.rounds).toBe(1);
+    expect(l18.averageScore).toBe(90);
+    expect(l18.averageScoreToPar).toBe(18);
+
+    const l9 = calculateRoundLevelStats(rounds, 9);
+    expect(l9.rounds).toBe(1);
+    expect(l9.averageScore).toBe(45);
+    expect(l9.averageScoreToPar).toBe(9);
+  });
+
+  it('calculateStats gives no round-level block until a length is chosen', () => {
+    expect(calculateStats(rounds).roundLevel).toBeNull();
+    expect(calculateStats(rounds, { courseId: null, numberOfHoles: 9 }).roundLevel?.averageScore).toBe(45);
+  });
+
+  it('hole-level figures combine both lengths when no length is chosen', () => {
+    expect(calculateStats(rounds).holes.holes).toBe(27);
+    expect(calculateStats(rounds, { courseId: null, numberOfHoles: 9 }).holes.holes).toBe(9);
+  });
+});
+
+describe('round-level figures', () => {
+  // Input deliberately out of date order.
+  const r1 = buildRound({ id: 'r1', date: '2026-03-08' }, () => ({ score: 5 })); // 90, +18
+  const r2 = buildRound({ id: 'r2', date: '2026-03-01' }, () => ({ score: 4 })); // 72, 0
+  const r3 = buildRound({ id: 'r3', date: '2026-03-15' }, () => ({ score: 6 })); // 108, +36
+  const level = calculateRoundLevelStats([r1, r2, r3], 18);
+
+  it('averages score, score to par and putts', () => {
+    expect(level.rounds).toBe(3);
+    expect(level.averageScore).toBe(90);
+    expect(level.averageScoreToPar).toBe(18);
+    expect(level.averagePutts).toBe(36);
+  });
+
+  it('returns the series oldest first', () => {
+    expect(level.results.map((r) => r.roundId)).toEqual(['r2', 'r1', 'r3']);
+    expect(level.results.map((r) => r.scoreToPar)).toEqual([0, 18, 36]);
+  });
+
+  it('picks best and worst by score to par', () => {
+    expect(level.best?.roundId).toBe('r2');
+    expect(level.best?.totalScore).toBe(72);
+    expect(level.worst?.roundId).toBe('r3');
+    expect(level.worst?.totalScore).toBe(108);
+  });
+
+  it('breaks ties in favour of the earliest round', () => {
+    const early = buildRound({ id: 'early', date: '2026-03-01' });
+    const late = buildRound({ id: 'late', date: '2026-03-02' });
+    const tied = calculateRoundLevelStats([late, early], 18);
+    expect(tied.best?.roundId).toBe('early');
+    expect(tied.worst?.roundId).toBe('early');
+  });
+
+  it('compares across courses by score to par, not by raw score', () => {
+    const par3Course = buildRound({ id: 'p3', courseId: 'c2' }, () => ({ par: 3, score: 4 })); // 72, +18
+    const par4Course = buildRound({ id: 'p4', courseId: 'c1' }, () => ({ par: 4, score: 4 })); // 72, 0
+    const mixed = calculateRoundLevelStats([par3Course, par4Course], 18);
+    expect(mixed.best?.roundId).toBe('p4');
+    expect(mixed.worst?.roundId).toBe('p3');
+  });
+});
+
+describe('empty data', () => {
+  it('has null averages and percentages, never NaN', () => {
+    const stats = calculateStats([]);
+    expect(stats.finishedRounds).toBe(0);
+    expect(stats.roundLevel).toBeNull();
+    expect(stats.holes.rounds).toBe(0);
+    expect(stats.holes.holes).toBe(0);
+    expect(stats.holes.averageScoreToPar).toBeNull();
+    expect(stats.holes.averagePutts).toBeNull();
+    expect(stats.holes.gir).toEqual({ count: 0, total: 0, percentage: null });
+    expect(stats.holes.fairways.percentage).toBeNull();
+    expect(stats.holes.upAndDown.percentage).toBeNull();
+    expect(stats.holes.threePutts.perHole).toBeNull();
+    expect(stats.holes.penalties.perHole).toBeNull();
+    expect(stats.byPar).toEqual([]);
+    expect(stats.byHoleNumber).toEqual([]);
+    expect(stats.byCourse).toEqual([]);
+    expect(stats.puttsByGir.withGir.averagePutts).toBeNull();
+    expect(stats.puttsByGir.withoutGir.averagePutts).toBeNull();
+  });
+
+  it('gives an empty round-level block when a length is chosen', () => {
+    const level = calculateStats([], { courseId: null, numberOfHoles: 18 }).roundLevel;
+    expect(level).not.toBeNull();
+    expect(level?.rounds).toBe(0);
+    expect(level?.averageScore).toBeNull();
+    expect(level?.averageScoreToPar).toBeNull();
+    expect(level?.averagePutts).toBeNull();
+    expect(level?.best).toBeNull();
+    expect(level?.worst).toBeNull();
+    expect(level?.results).toEqual([]);
+  });
+});
+
+describe('hole-level rates', () => {
+  // Only 3 holes played; the other 6 are unplayed.
+  const round = buildRound(
+    { id: 'r', numberOfHoles: 9 },
+    bySpec([
+      { score: 4, putts: 2, fairway: true, gir: true },
+      { par: 3, score: 4, putts: 3, fairway: null, gir: false, upAndDown: true, penaltyStrokes: 1 },
+      { score: 5, putts: 1, fairway: false, gir: false, upAndDown: false },
+    ]),
+  );
+  const level = calculateHoleLevelStats([round]);
+
+  it('uses played holes only as the sample', () => {
+    expect(level.rounds).toBe(1);
+    expect(level.holes).toBe(3);
+  });
+
+  it('computes GIR with its sample size, unrounded', () => {
+    expect(level.gir.count).toBe(1);
+    expect(level.gir.total).toBe(3);
+    expect(level.gir.percentage).toBeCloseTo(33.3333, 3);
+  });
+
+  it('counts fairways against applicable holes only (par 3 excluded)', () => {
+    expect(level.fairways).toEqual({ count: 1, total: 2, percentage: 50 });
+  });
+
+  it('counts up & downs against real opportunities only', () => {
+    expect(level.upAndDown).toEqual({ count: 1, total: 2, percentage: 50 });
+  });
+
+  it('computes 3-putts and penalties per hole', () => {
+    expect(level.threePutts.count).toBe(1);
+    expect(level.threePutts.holes).toBe(3);
+    expect(level.threePutts.perHole).toBeCloseTo(1 / 3);
+    expect(level.penalties.count).toBe(1);
+    expect(level.penalties.perHole).toBeCloseTo(1 / 3);
+  });
+
+  it('computes average score to par and putts per hole', () => {
+    expect(level.averageScoreToPar).toBeCloseTo(2 / 3); // 0, +1, +1
+    expect(level.averagePutts).toBe(2); // (2 + 3 + 1) / 3
+  });
+
+  it('returns null, not 0 or NaN, when there is nothing to divide by', () => {
+    const allPar3 = buildRound({ id: 'p3', numberOfHoles: 9 }, () => ({ par: 3, fairway: null }));
+    const stats = calculateHoleLevelStats([allPar3]);
+    expect(stats.fairways).toEqual({ count: 0, total: 0, percentage: null });
+    expect(stats.upAndDown).toEqual({ count: 0, total: 0, percentage: null });
+    expect(stats.gir.percentage).toBe(0); // 9 holes played, none with GIR: a real 0
+  });
+
+  it('includes unplayed-hole rounds only through their played holes', () => {
+    const full = buildRound({ id: 'full', numberOfHoles: 9 });
+    const combined = calculateHoleLevelStats([round, full]);
+    expect(combined.rounds).toBe(2);
+    expect(combined.holes).toBe(12);
+  });
+});
+
+describe('breakdowns', () => {
+  it('by par: one group per par value, ascending, with sample sizes', () => {
+    const round = buildRound({ id: 'r', numberOfHoles: 9 }, (i) => {
+      const par = i < 3 ? 3 : i < 6 ? 4 : 5;
+      return { par, score: par + 1 };
+    });
+    // Order of input must not matter for the output order.
+    const groups = breakdownByPar([round]);
+    expect(groups.map((g) => g.par)).toEqual([3, 4, 5]);
+    expect(groups.map((g) => g.stats.holes)).toEqual([3, 3, 3]);
+    expect(groups.map((g) => g.stats.averageScoreToPar)).toEqual([1, 1, 1]);
+  });
+
+  it('by hole number: uses real numbers and sorts numerically', () => {
+    const front = buildRound({ id: 'f', numberOfHoles: 9, startHole: 1 });
+    const back = buildRound({ id: 'b', numberOfHoles: 9, startHole: 10 });
+    const groups = breakdownByHoleNumber([back, front]);
+    expect(groups.map((g) => g.holeNumber)).toEqual(
+      Array.from({ length: 18 }, (_, i) => i + 1),
+    );
+    expect(groups.every((g) => g.stats.holes === 1)).toBe(true);
+  });
+
+  it('by hole number: the same hole in several rounds adds up', () => {
+    const a = buildRound({ id: 'a', numberOfHoles: 9 }, () => ({ score: 4 }));
+    const b = buildRound({ id: 'b', numberOfHoles: 9 }, () => ({ score: 6 }));
+    const hole1 = breakdownByHoleNumber([a, b]).find((g) => g.holeNumber === 1);
+    expect(hole1?.stats.holes).toBe(2);
+    expect(hole1?.stats.averageScoreToPar).toBe(1); // (0 + 2) / 2
+  });
+
+  it('by course: groups by course id, names from the latest round, sorted by name', () => {
+    const old = buildRound({ id: 'o1', courseId: 'c1', courseName: 'Old name', date: '2026-03-01', numberOfHoles: 9 });
+    const renamed = buildRound({ id: 'o2', courseId: 'c1', courseName: 'New name', date: '2026-03-10', numberOfHoles: 9 });
+    const other = buildRound({ id: 'x', courseId: 'c2', courseName: 'Alpha', date: '2026-03-05', numberOfHoles: 9 });
+
+    const groups = breakdownByCourse([renamed, other, old]);
+    expect(groups.map((g) => [g.courseId, g.courseName, g.rounds, g.stats.holes])).toEqual([
+      ['c2', 'Alpha', 1, 9],
+      ['c1', 'New name', 2, 18],
+    ]);
+  });
+
+  it('by course: unplayed holes are not counted in the sample', () => {
+    const partial = buildRound({ id: 'p', numberOfHoles: 9 }, bySpec([{ score: 4 }, { score: 5 }]));
+    const groups = breakdownByCourse([partial]);
+    expect(groups.map((g) => g.stats.holes)).toEqual([2]);
+  });
+
+  it('putts with and without GIR', () => {
+    const round = buildRound({ id: 'r', numberOfHoles: 9 }, (i) =>
+      i < 3 ? { gir: true, putts: [1, 2, 1][i] ?? 0 } : { gir: false, putts: 2 },
+    );
+    const result = puttsByGir([round]);
+    expect(result.withGir).toEqual({ holes: 3, totalPutts: 4, averagePutts: 4 / 3 });
+    expect(result.withoutGir).toEqual({ holes: 6, totalPutts: 12, averagePutts: 2 });
+  });
+
+  it('putts by GIR: one side can be empty', () => {
+    const noGir = buildRound({ id: 'n', numberOfHoles: 9 });
+    const result = puttsByGir([noGir]);
+    expect(result.withGir).toEqual({ holes: 0, totalPutts: 0, averagePutts: null });
+    expect(result.withoutGir.holes).toBe(9);
+  });
+});
+
+describe('calculateStats', () => {
+  const a = buildRound({ id: 'a', courseId: 'c1', numberOfHoles: 18 });
+  const b = buildRound({ id: 'b', courseId: 'c1', numberOfHoles: 9 });
+  const c = buildRound({ id: 'c', courseId: 'c2', numberOfHoles: 9 });
+  const rounds = [a, b, c];
+
+  it('applies the course and 9/18 filters to every block', () => {
+    const filter = { courseId: 'c1', numberOfHoles: 9 as const };
+    const stats = calculateStats(rounds, filter);
+
+    expect(stats.filter).toEqual(filter);
+    expect(stats.finishedRounds).toBe(1);
+    expect(stats.roundLevel?.numberOfHoles).toBe(9);
+    expect(stats.roundLevel?.rounds).toBe(1);
+    expect(stats.holes.holes).toBe(9);
+    expect(stats.byCourse.map((g) => g.courseId)).toEqual(['c1']);
+    expect(stats.byHoleNumber).toHaveLength(9);
+  });
+
+  it('counts finished rounds only in finishedRounds', () => {
+    const inProgress = buildRound({ id: 'ip', status: 'in_progress' });
+    expect(calculateStats([...rounds, inProgress]).finishedRounds).toBe(3);
+  });
+
+  it('does not mutate its input', () => {
+    const before = JSON.stringify(rounds);
+    calculateStats(rounds, { courseId: null, numberOfHoles: 18 });
+    expect(JSON.stringify(rounds)).toBe(before);
+  });
+});
+
