@@ -6,7 +6,7 @@ _Paste this file at the start of every new conversation, together with the files
 V0.1 done and deployed. Current block: V0.1.x + V0.2 (export all, history and dashboard).
 
 ## Current phase
-**Phase 9 — Export all rounds to one Excel file** (next up)
+**Phase 10 — Statistics domain (pure functions + tests)** (next up)
 
 ## Phases
 
@@ -23,7 +23,7 @@ V0.1
 
 V0.1.x / V0.2
 - [x] 9. Export all rounds to one Excel file
-- [ ] 10. Statistics domain (pure functions + tests)
+- [x] 10. Statistics domain (pure functions + tests)
 - [ ] 11. Dashboard UI: `/stats`, filters, best/worst, round list
 - [ ] 12. Charts, "where I lose strokes" breakdowns, backup nudge
 
@@ -137,6 +137,12 @@ Phases 13–20 are outlined only; each block is detailed at the start of its fir
 - Tests in `tests/excelExportAll.test.ts` (ordering, in-progress excluded, 9/18 holes, back nine numbering, unplayed holes, empty cells, file round trip).
 - Checked on the iPhone (deployed site): share sheet opens on the first tap, file saves to Files, "Replace" works with the fixed name. (Ajusta esta línea si algo salió distinto.)
 
+## Phase 10 results (statistics domain)
+
+- `src/domain/stats.ts` (pure, built on `calculations.ts`) and `tests/stats.test.ts`. No new dependencies, schema unchanged.
+- Choices: `roundLevel` is `null` until a 9/18 length is chosen (D25); best/worst by score to par, ties to the earliest round; complete round = finished, `holes.length === numberOfHoles`, all played; hole-level `rounds` = finished rounds with at least one played hole; course name from the latest round.
+- Every figure carries its sample size (`Rate`, `PerHole`, `HoleStats.holes`, `RoundLevelStats.rounds`).
+
 ## Planning results for the V0.1.x / V0.2 block (second phase 0)
 
 - New decisions D23-D38 in `docs/decisions.md`; `PROMPT.md` (sections 1, 2, 3, 6-9, 12, 13, 16-20, 23, 25), `docs/roadmap.md` and `docs/architecture.md` updated.
@@ -165,4 +171,14 @@ Phases 13–20 are outlined only; each block is detailed at the start of its fir
 
 ## Next conversation template
 
-> We are in phase 10 (Statistics domain). Phases 0-9 are done and deployed; the V0.2 planning is in PROMPT.md, docs/roadmap.md and decisions D23-D38. I attach PROMPT.md, STATUS.md, decisions.md, architecture.md, database.md, the domain files (`types.ts`, `calculations.ts`, `format.ts`) and the calculation tests. Goal: create `src/domain/stats.ts`, pure TypeScript with no React and no IndexedDB, built on `calculations.ts` and taking `RoundWithHoles[]` as input. It follows the rules of D25 and the scope of D26: in-progress rounds excluded; round-level metrics (average score, putts, best/worst round) from complete finished rounds, with 9-hole and 18-hole rounds never mixed; hole-level rates (GIR %, fairway %, up & down %, 3-putts per hole, penalties per hole) from all played holes of finished rounds; breakdowns by par type, hole number and course; putts with and without GIR; score-to-par series over time; course and 9/18 filters as pure functions; every figure carries its sample size; percentages 0-100, unrounded, `null` when the denominator is 0 (D18). Add Vitest tests for each rule, including empty data, incomplete rounds and 9 vs 18 separation. No UI in this phase and no new dependencies. Follow section 23 of the prompt. Spanish UI is not involved yet.
+> We are in phase 11 (Dashboard UI). Phases 0-10 are done and deployed/committed; the V0.2 planning is in PROMPT.md, docs/roadmap.md and decisions D23-D38. I attach one file with PROMPT.md, STATUS.md, decisions.md, architecture.md, database.md, roadmap.md, the domain files (`types.ts`, `calculations.ts`, `format.ts`, `stats.ts`), `roundRepository.ts`, `useRounds.ts`, `Rounds.tsx`, `Home.tsx`, `main.tsx`, `App.tsx` and `index.css`.
+>
+> Goal: build the first version of the dashboard at `/stats` (D27), reading Dexie through `listRoundsWithHoles` and computing everything with `calculateStats` from `domain/stats.ts` (D23). Scope for this phase:
+> - `hooks/useStats.ts`: loads rounds, holds the filter state (course, 9/18; default 18 holes, all courses), exposes loading/error state and the `Stats` result. No business rules in the hook or the page.
+> - Course options for the filter: add a small pure function in `domain/stats.ts` (distinct courses of finished rounds, name from the latest round, with round count) plus Vitest tests. This is the only domain change.
+> - `pages/Stats.tsx`: filter controls (course select, 9/18 segmented control); general cards (finished rounds, average score, average score to par, average putts, GIR %, fairway %, up & down %, 3-putts per hole, penalties per hole) each showing its sample size (e.g. "GIR 41% · 108 hoyos"); best and worst round cards that open the existing `/round/:id/summary`; list of finished rounds for the current filter, newest first, each opening the same summary. When no 9/18 length is chosen, round-level cards show a clear hint instead of numbers (roundLevel is null). Empty states: no finished rounds, no rounds for the filter, fewer than 3 rounds ("pocas rondas: las cifras no son concluyentes").
+> - "Estadísticas" button on Home and the `/stats` route; no existing route changes.
+> - Responsive layout (phone and desktop), same light high-contrast theme and CSS variables as the rest of the app, large touch targets. The in-round screens must not be touched.
+> - Out of scope for this phase: charts, breakdowns by par / hole / course, putts with/without GIR, backup nudge (all phase 12). No new dependencies, schema unchanged.
+>
+> UI language is Spanish; code, comments and commits in English. Follow section 23 of the prompt: explain what we build, which files change, implement with complete files, explain how to test (including checking it on the deployed iPhone site and on desktop), list potential issues, and wait for my feedback. At the end, give me the STATUS.md block for phase 11 and the commit commands.
