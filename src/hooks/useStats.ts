@@ -42,25 +42,35 @@ export function useStats() {
   }, []);
 
   const setCourseId = useCallback((courseId: string | null) => {
-  setFilter((current: StatsFilter) => ({ ...current, courseId }));
-}, []);
+    setFilter((current: StatsFilter) => ({ ...current, courseId }));
+  }, []);
 
-const setNumberOfHoles = useCallback((numberOfHoles: NumberOfHoles | null) => {
-  setFilter((current: StatsFilter) => ({ ...current, numberOfHoles }));
-}, []);
+  const setNumberOfHoles = useCallback((numberOfHoles: NumberOfHoles | null) => {
+    setFilter((current: StatsFilter) => ({ ...current, numberOfHoles }));
+  }, []);
 
-  const rounds = result?.status === 'ready' ? result.rounds : NO_ROUNDS;
+  const allRounds = result?.status === 'ready' ? result.rounds : NO_ROUNDS;
 
-  const courses: CourseOption[] = useMemo(() => listCourseOptions(rounds), [rounds]);
-  const stats: Stats = useMemo(() => calculateStats(rounds, filter), [rounds, filter]);
+  const courses: CourseOption[] = useMemo(() => listCourseOptions(allRounds), [allRounds]);
+  const stats: Stats = useMemo(() => calculateStats(allRounds, filter), [allRounds, filter]);
 
   // Same order as the repository returns them: newest first.
   const finishedRounds: RoundWithHoles[] = useMemo(
-    () => filterRounds(rounds, filter).filter(isFinishedRound),
-    [rounds, filter],
+    () => filterRounds(allRounds, filter).filter(isFinishedRound),
+    [allRounds, filter],
   );
 
   const loadState: StatsLoadState = result ? result.status : 'loading';
 
-  return { loadState, filter, setCourseId, setNumberOfHoles, courses, stats, finishedRounds };
+  return {
+    loadState,
+    filter,
+    setCourseId,
+    setNumberOfHoles,
+    courses,
+    stats,
+    finishedRounds,
+    /** Every round, ignoring the filter (used by the backup nudge). */
+    allRounds,
+  };
 }

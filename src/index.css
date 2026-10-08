@@ -263,3 +263,40 @@ a.btn-secondary, a.btn-secondary:visited { color: var(--fg); }
   .stats-grid { grid-template-columns: repeat(3, 1fr); }
   .best-worst { grid-template-columns: 1fr 1fr; }
 }
+
+/* ---- Dashboard sections and charts (phase 12) ---- */
+.collapsible { border: 2px solid var(--line); border-radius: 14px; background: var(--bg); }
+.collapsible-sub { border-width: 1px; border-color: var(--line-soft); }
+.collapsible-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 0 16px;
+  font-size: 1.15rem;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+.collapsible-sub .collapsible-summary { min-height: 52px; font-size: 1rem; }
+/* Hide Safari's default marker and draw our own chevron. */
+.collapsible-summary::-webkit-details-marker { display: none; }
+.collapsible-summary::marker { content: ''; }
+.collapsible-summary::after { content: '▾'; margin-left: auto; font-size: 1.4rem; }
+.collapsible[open] > .collapsible-summary::after { content: '▴'; }
+.collapsible-hint { font-size: 0.9rem; font-weight: 700; color: var(--muted); }
+.collapsible-body { display: flex; flex-direction: column; gap: 12px; padding: 0 12px 14px; }
+.collapsible-sub .collapsible-body { padding: 0 8px 12px; }
+
+.chart { margin: 0; max-width: 560px; }
+.chart-svg { display: block; width: 100%; height: auto; }
+.chart-label, .chart-value { font-size: 17px; font-weight: 700; fill: var(--fg); }
+.chart-sample, .chart-tick { font-size: 15px; fill: var(--muted); }
+.chart-grid { stroke: var(--line-soft); stroke-width: 1; }
+.chart-zero { stroke: var(--fg); stroke-width: 2; }
+.chart-track { fill: var(--surface); }
+.chart-bar { fill: var(--fg); }
+.chart-bar-low { fill: var(--bg); stroke: var(--fg); stroke-width: 2; stroke-dasharray: 5 3; }
+.chart-line { fill: none; stroke: var(--fg); stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
+.chart-dot { fill: var(--fg); stroke: var(--bg); stroke-width: 2; }
+.highlights { margin: 0; padding-left: 20px; display: grid; gap: 6px; }

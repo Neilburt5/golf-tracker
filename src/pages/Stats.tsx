@@ -1,9 +1,20 @@
 import { Link } from 'react-router-dom';
+import { BackupLine, BackupNudge } from '../components/BackupNudge';
 import { BigLink } from '../components/BigButton';
+import { CollapsibleSection } from '../components/CollapsibleSection';
+import { LossBreakdowns } from '../components/LossBreakdowns';
+import { ScoreToParChart } from '../components/ScoreToParChart';
 import { calculateRoundStats } from '../domain/calculations';
-import { formatPercentage, formatToPar } from '../domain/format';
+import {
+  formatDecimal,
+  formatPercentage,
+  formatSignedDecimal,
+  formatToPar,
+  plural,
+} from '../domain/format';
 import type { RoundResult } from '../domain/stats';
 import type { NumberOfHoles, RoundWithHoles } from '../domain/types';
+import { useBackupNudge } from '../hooks/useBackupStatus';
 import { useStats } from '../hooks/useStats';
 
 /** Below this many finished rounds the figures are flagged as not conclusive. */
@@ -14,26 +25,6 @@ const LENGTH_OPTIONS: { label: string; value: NumberOfHoles | null }[] = [
   { label: '9 hoyos', value: 9 },
   { label: 'Ambas', value: null },
 ];
-
-function plural(count: number, one: string, many: string): string {
-  return count === 1 ? `1 ${one}` : `${count} ${many}`;
-}
-
-function formatDecimal(value: number | null, digits = 1): string {
-  if (value === null) return '—';
-  return value.toLocaleString('es-ES', {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  });
-}
-
-/** "+5,3", "-1,2", "0,0"; "—" when there is no value. */
-function formatSignedDecimal(value: number | null): string {
-  if (value === null) return '—';
-  const rounded = Math.round(value * 10) / 10;
-  const text = formatDecimal(rounded);
-  return rounded > 0 ? `+${text}` : text;
-}
 
 interface StatCardProps {
   label: string;
@@ -99,8 +90,17 @@ function FinishedRoundRow({ data }: { data: RoundWithHoles }) {
 }
 
 export function Stats() {
-  const { loadState, filter, setCourseId, setNumberOfHoles, courses, stats, finishedRounds } =
-    useStats();
+  const {
+    loadState,
+    filter,
+    setCourseId,
+    setNumberOfHoles,
+    courses,
+    stats,
+    finishedRounds,
+    allRounds,
+  } = useStats();
+  const { nudge, lastBackupAt } = useBackupNudge(allRounds);
   const { roundLevel, holes } = stats;
 
   const hasAnyFinishedRound = courses.length > 0;
@@ -132,6 +132,8 @@ export function Stats() {
 
       {loadState === 'ready' && hasAnyFinishedRound && (
         <>
+          <BackupNudge nudge={nudge} />
+
           <section className="stats-filters" aria-label="Filtros">
             <div>
               <label className="field-label" htmlFor="stats-course">
@@ -193,8 +195,7 @@ export function Stats() {
                 </section>
               )}
 
-              <section className="stack" aria-label="Resumen">
-                <h2 className="subtitle">Resumen</h2>
+              <CollapsibleSection title="Resumen" defaultOpen>
                 <div className="stats-grid">
                   <StatCard
                     label="Rondas finalizadas"
@@ -241,26 +242,24 @@ export function Stats() {
                     </span>
                   </div>
                 )}
-              </section>
 
-              {roundLevel !== null && hasRoundLevelData && (
-                <section className="stack" aria-label="Mejor y peor ronda">
-                  <h2 className="subtitle">Mejor y peor ronda</h2>
-                  {roundLevel.rounds >= 2 && roundLevel.best && roundLevel.worst ? (
-                    <div className="best-worst">
-                      <RoundResultLink label="Mejor ronda" result={roundLevel.best} />
-                      <RoundResultLink label="Peor ronda" result={roundLevel.worst} />
-                    </div>
-                  ) : (
-                    <p className="muted">
-                      Hacen falta al menos 2 rondas completas para comparar la mejor y la peor.
-                    </p>
-                  )}
-                </section>
-              )}
+                {roundLevel !== null && hasRoundLevelData && (
+                  <>
+                    <h3 className="subtitle">Mejor y peor ronda</h3>
+                    {roundLevel.rounds >= 2 && roundLevel.best && roundLevel.worst ? (
+                      <div className="best-worst">
+                        <RoundResultLink label="Mejor ronda" result={roundLevel.best} />
+                        <RoundResultLink label="Peor ronda" result={roundLevel.worst} />
+                      </div>
+                    ) : (
+                      <p className="muted">
+                        Hacen falta al menos 2 rondas completas para comparar la mejor y la peor.
+                      </p>
+                    )}
+                  </>
+                )}
 
-              <section className="stack" aria-label="Por hoyo">
-                <h2 className="subtitle">Por hoyo</h2>
+                <h3 className="subtitle">Por hoyo</h3>
                 <div className="stats-grid">
                   <StatCard
                     label="Greens en regulación"
@@ -292,16 +291,34 @@ export function Stats() {
                   Basado en {plural(holes.rounds, 'ronda finalizada', 'rondas finalizadas')} y{' '}
                   {plural(holes.holes, 'hoyo jugado', 'hoyos jugados')}.
                 </p>
-              </section>
 
-              <section className="stack" aria-label="Rondas finalizadas">
-                <h2 className="subtitle">Rondas finalizadas ({finishedRounds.length})</h2>
+                <BackupLine lastBackupAt={lastBackupAt} />
+              </CollapsibleSection>
+
+              <CollapsibleSection title="Evolución" defaultOpen>
+                {roundLevel === null ? (
+                  <div className="card">
+                    <strong>Elige 9 o 18 hoyos para ver la evolución.</strong>
+                    <span className="muted">
+                      La gráfica compara rondas de la misma longitud.
+                    </span>
+                  </div>
+                ) : (
+                  <ScoreToParChart results={roundLevel.results} />
+                )}
+              </CollapsibleSection>
+
+              <CollapsibleSection title="Dónde pierdo golpes" defaultOpen>
+                <LossBreakdowns stats={stats} />
+              </CollapsibleSection>
+
+              <CollapsibleSection title="Rondas finalizadas" hint={String(finishedRounds.length)}>
                 <div className="round-list">
                   {finishedRounds.map((data) => (
                     <FinishedRoundRow key={data.round.id} data={data} />
                   ))}
                 </div>
-              </section>
+              </CollapsibleSection>
             </>
           )}
         </>
