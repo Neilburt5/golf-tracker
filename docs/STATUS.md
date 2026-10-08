@@ -3,10 +3,10 @@
 _Paste this file at the start of every new conversation, together with the files relevant to the current phase._
 
 ## Current version
-V0.1 done and deployed. Current block: V0.1.x + V0.2 (export all, history and dashboard).
+V0.1 and V0.2 done (export all, history and dashboard, charts, backup nudge). Next block: V0.3 (environment and course data).
 
 ## Current phase
-**Phase 10 — Statistics domain (pure functions + tests)** (next up)
+**Phase 13 — GPS field test page + decisions from a real round** (next up)
 
 ## Phases
 
@@ -24,8 +24,8 @@ V0.1
 V0.1.x / V0.2
 - [x] 9. Export all rounds to one Excel file
 - [x] 10. Statistics domain (pure functions + tests)
-- [ ] 11. Dashboard UI: `/stats`, filters, best/worst, round list
-- [ ] 12. Charts, "where I lose strokes" breakdowns, backup nudge
+- [x] 11. Dashboard UI: `/stats`, filters, best/worst, round list
+- [x] 12. Charts, "where I lose strokes" breakdowns, backup nudge
 
 V0.3
 - [ ] 13. GPS field test page + decisions from a real round
@@ -60,6 +60,7 @@ Phases 13–20 are outlined only; each block is detailed at the start of its fir
 - GPS = one fix per tap, never continuous (D32). Course geometry captured by the user in-app (D33). Weather from Open-Meteo with the course coordinates (D34).
 - Elevation/slope discarded (D35). Distances in meters (D36). Shot tracking optional; `score` stays the truth (D37).
 - Every phase that adds data extends backup and export (D38).
+- Last backup date in localStorage; nudge at 1 / 3 / 30 (D39).
 
 ## Phase 2 results (domain)
 
@@ -154,13 +155,26 @@ Phases 13–20 are outlined only; each block is detailed at the start of its fir
 - Pending checks: ticking the iPhone test on the deployed site.
 - Next: phase 12 (charts, breakdowns by par / hole / course, putts with/without GIR, backup nudge). Move the number formatters to `domain/format.ts` then.
 
+## Phase 12 results (charts, breakdowns, backup nudge)
+
+- Plain-SVG charts: `ScoreToParChart` (last 30 rounds, only with a 9/18 length) and `HorizontalBarChart`; geometry in `domain/chartScale.ts`. No new dependencies, schema unchanged (v1).
+- "Dónde pierdo golpes" on `/stats` (`LossBreakdowns`): by par, hole number, putts with/without GIR and course (only if more than one course), all with sample sizes. Groups under 5 holes are flagged "pocos hoyos" (dashed bar) and excluded from the highlights (`domain/lossRanking.ts`, `LOW_SAMPLE_HOLES`).
+- `/stats` organised in native `<details>` blocks (`CollapsibleSection`): Resumen, Evolución, Dónde pierdo golpes (open) and Rondas finalizadas (closed).
+- Backup nudge (D39): last backup date in localStorage (`services/backupStatus.ts`), recorded when "Guardar copia" ends shared/downloaded, using the moment the file was built. `domain/backupNudge.ts` nudges from the 1st finished round if never backed up, otherwise at 3 unprotected rounds (finished, `updatedAt` after the backup) or 30 days with at least 1. Yellow card at the top of `/stats`; "Última copia" line on `/stats` and `/rounds`.
+- `formatDecimal`, `formatSignedDecimal` moved from `Stats.tsx` to `domain/format.ts`; `plural`, `formatShortDate`, `formatDayMonth` added.
+- `/rounds`: the Excel and backup sections have separate messages (before they shared one).
+- 54 new tests (format, backupNudge, chartScale, backupStatus, lossRanking). In-round screens, backup format, Excel export and `stats.ts` untouched.
+- Choices: ranking helper lives in a new `domain/lossRanking.ts` instead of `stats.ts`; restoring a backup does not set the backup date; in-progress rounds are ignored by the nudge.
+- Known caveat: `shared` means the share sheet completed, not that the file reached Files, so the UI says "Última copia", never "verificada".
+- V0.2 block complete.
+
 ## Planning results for the V0.1.x / V0.2 block (second phase 0)
 
 - New decisions D23-D38 in `docs/decisions.md`; `PROMPT.md` (sections 1, 2, 3, 6-9, 12, 13, 16-20, 23, 25), `docs/roadmap.md` and `docs/architecture.md` updated.
 - Order of work chosen by the user: export all first, then the dashboard, then GPS / weather / clubs.
 - Slope/elevation discarded (D35). Distances in meters (D36).
 - Open items: backup nudge values and storage location (D28), whether restore needs a "replace with confirmation" option (D29), OpenStreetMap research (D33), Open-Meteo terms check (D34).
-
+- D28: resolved by D39.
 ## Environment
 
 - OS: Windows (no Mac)
@@ -179,17 +193,15 @@ Phases 13–20 are outlined only; each block is detailed at the start of its fir
 - (D19) Restoring an in-progress round can change which round "Continue round" opens.
 - (D29) Restore never overwrites: edits to an existing round do not reach another device's copy.
 - `crypto.randomUUID()` needs a secure context (only matters when testing over a LAN IP); optional fallback not implemented.
+- (D39) The last backup date lives in localStorage of this device: after a reinstall or on another device it is empty and the nudge shows again. If localStorage is blocked, the date is not recorded.
 
 ## Next conversation template
 
-> We are in phase 11 (Dashboard UI). Phases 0-10 are done and deployed/committed; the V0.2 planning is in PROMPT.md, docs/roadmap.md and decisions D23-D38. I attach one file with PROMPT.md, STATUS.md, decisions.md, architecture.md, database.md, roadmap.md, the domain files (`types.ts`, `calculations.ts`, `format.ts`, `stats.ts`), `roundRepository.ts`, `useRounds.ts`, `Rounds.tsx`, `Home.tsx`, `main.tsx`, `App.tsx` and `index.css`.
+> We are in phase 13 (GPS field test page). Phases 0-12 are done and deployed/committed; V0.2 is complete. The V0.3 plan is in PROMPT.md (sections 3, 7, 18, 25), docs/roadmap.md and decisions D31-D35. I attach PROMPT.md, STATUS.md, decisions.md, architecture.md, roadmap.md, `App.tsx`, `main.tsx`, `Home.tsx`, `index.css` and `BigButton.tsx`.
 >
-> Goal: build the first version of the dashboard at `/stats` (D27), reading Dexie through `listRoundsWithHoles` and computing everything with `calculateStats` from `domain/stats.ts` (D23). Scope for this phase:
-> - `hooks/useStats.ts`: loads rounds, holds the filter state (course, 9/18; default 18 holes, all courses), exposes loading/error state and the `Stats` result. No business rules in the hook or the page.
-> - Course options for the filter: add a small pure function in `domain/stats.ts` (distinct courses of finished rounds, name from the latest round, with round count) plus Vitest tests. This is the only domain change.
-> - `pages/Stats.tsx`: filter controls (course select, 9/18 segmented control); general cards (finished rounds, average score, average score to par, average putts, GIR %, fairway %, up & down %, 3-putts per hole, penalties per hole) each showing its sample size (e.g. "GIR 41% · 108 hoyos"); best and worst round cards that open the existing `/round/:id/summary`; list of finished rounds for the current filter, newest first, each opening the same summary. When no 9/18 length is chosen, round-level cards show a clear hint instead of numbers (roundLevel is null). Empty states: no finished rounds, no rounds for the filter, fewer than 3 rounds ("pocas rondas: las cifras no son concluyentes").
-> - "Estadísticas" button on Home and the `/stats` route; no existing route changes.
-> - Responsive layout (phone and desktop), same light high-contrast theme and CSS variables as the rest of the app, large touch targets. The in-round screens must not be touched.
-> - Out of scope for this phase: charts, breakdowns by par / hole / course, putts with/without GIR, backup nudge (all phase 12). No new dependencies, schema unchanged.
+> Goal: a hidden test page (not linked from the main flow) to check on the real iPhone, installed as a PWA, how single GPS fixes behave (D32): permission prompt and permission state, accuracy in meters, time to get a fix, behaviour after the screen locks and after the app goes to the background, and behaviour in airplane mode. The page logs each fix (timestamp, latitude, longitude, accuracy) on screen and lets me copy the log. One fix per tap, never `watchPosition`.
+> - Before coding: explain the plan, the files, and the checklist I should follow on the course.
+> - Out of scope: storing fixes in the database, weather, course geometry, any change to the in-round screens. No new dependencies, schema unchanged.
+> - Output of the phase: a written list of findings and decisions recorded in `docs/decisions.md` before building anything on GPS (phases 15-18 depend on them).
 >
-> UI language is Spanish; code, comments and commits in English. Follow section 23 of the prompt: explain what we build, which files change, implement with complete files, explain how to test (including checking it on the deployed iPhone site and on desktop), list potential issues, and wait for my feedback. At the end, give me the STATUS.md block for phase 11 and the commit commands.
+> UI language is Spanish; code, comments and commits in English. Follow section 23 of the prompt and finish with the STATUS.md block and the commit commands.

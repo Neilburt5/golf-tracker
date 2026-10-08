@@ -32,10 +32,10 @@ The domain layer is the long-term asset: the round summary, Excel export, histor
 src/
 ├── pages/         Home, NewRound, HoleTracking, RoundSummary, Rounds, Stats
 ├── components/    Stepper, YesNoToggle, HoleProgress, SVG charts, ...
-├── hooks/         useHoleForm, useRoundSummary, useRounds, useStats, ...
-├── domain/        types.ts, calculations.ts, validation.ts, resume.ts, format.ts, stats.ts
+├── hooks/         useHoleForm, useRoundSummary, useRounds, useStats, useBackupStatus, ...
+├── domain/        types.ts, calculations.ts, validation.ts, resume.ts, format.ts, stats.ts, chartScale.ts, lossRanking.ts, backupNudge.ts
 ├── data/          db.ts, roundRepository.ts, courseRepository.ts, courses.json
-├── services/      excelExport.ts, shareFile.ts, backup.ts, filenames.ts, storagePersistence.ts
+├── services/      excelExport.ts, shareFile.ts, backup.ts, backupStatus.ts, filenames.ts, storagePersistence.ts
 └── main.tsx
 ```
 
@@ -90,7 +90,10 @@ pages/Stats.tsx + SVG chart components
 - Scale: hundreds of rounds are a few thousand hole rows, so loading everything in memory is fine. The schema stays at v1 and no new index is needed for V0.2.
 - Charts are plain SVG components, no chart library (D30).
 - Layout is responsive (phone and desktop). The in-round screens are not touched.
-- Last backup date and a nudge after N rounds without a backup are added in phase 12 (D28).
+- Charts are plain SVG components (`ScoreToParChart`, `HorizontalBarChart`). The geometry (axes, points, bar spans) is in `domain/chartScale.ts`; the components only draw it.
+- `/stats` is organised in native `<details>` blocks (`CollapsibleSection`): Resumen, Evolución, Dónde pierdo golpes (sub-blocks by par, hole number, putts with/without GIR, course) and Rondas finalizadas.
+- Groups with fewer than 5 played holes are flagged "pocos hoyos" and never ranked (`domain/lossRanking.ts`).
+- Backup nudge: `domain/backupNudge.ts` (pure) + `services/backupStatus.ts` (localStorage) + `hooks/useBackupStatus.ts`. It uses all rounds, ignoring the dashboard filter (D39).
 
 ## Courses
 
@@ -137,3 +140,4 @@ Vitest for domain calculations, statistics, validation, repositories (with `fake
 7. GPS accuracy is several meters, so shot distances are approximate and always shown with their accuracy.
 8. Wind from the weather service is a grid value at 10 m, not the wind at the ball.
 9. Statistics from few rounds are not conclusive; sample sizes are always shown.
+10. The last backup date lives in localStorage (D39): it is lost on reinstall and `shared` does not prove the file reached Files.
