@@ -1,5 +1,6 @@
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { UpdatePrompt } from './components/UpdatePrompt'
+import { GpsTest } from './pages/GpsTest'
 import { HoleTracking } from './pages/HoleTracking'
 import { Home } from './pages/Home'
 import { NewRound } from './pages/NewRound'
@@ -16,6 +17,8 @@ export default function App() {
           <Route path="/new" element={<NewRound />} />
           <Route path="/rounds" element={<Rounds />} />
           <Route path="/stats" element={<Stats />} />
+          {/* Hidden test page (phase 13): reached by tapping the build line on Home 5 times. */}
+          <Route path="/gps-test" element={<GpsTest />} />
           <Route path="/round/:roundId/hole/:holeNumber" element={<HoleTracking />} />
           <Route path="/round/:roundId/summary" element={<RoundSummary />} />
           <Route path="*" element={<Navigate to="/" replace />} />
