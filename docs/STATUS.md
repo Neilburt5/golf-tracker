@@ -168,6 +168,14 @@ Phases 13–20 are outlined only; each block is detailed at the start of its fir
 - Known caveat: `shared` means the share sheet completed, not that the file reached Files, so the UI says "Última copia", never "verificada".
 - V0.2 block complete.
 
+## Phase 13 results (GPS field test page) — DONE
+
+- Hidden page `/gps-test` (tap the Build line on Home 5 times). Two ways to get a position: a single fix per tap, and a bounded short capture window started by a tap (phase 13b).
+- Findings: single `getCurrentPosition` calls can return a stale cached position (frozen for 140 s while walking 113 m). The bounded `watchPosition` window returned a fresh, precise position in 0.6 s median (12 of 13 within 2.1 s). Every window begins with stale and coarse positions, so age <= 3 s and accuracy <= 20 m must be checked. Distance error on three known legs: +19, -2, +8 m with fixes of 14-23 m accuracy. Works with the screen locked and offline. Permission is asked once.
+- Decisions recorded: D32 amendment, D39-D43. D32's "never watchPosition" is now "no continuous tracking; bounded capture window only".
+- To carry into phases 15-18: reuse `startShortCapture`; return the best position of the window (not the latest); report stale and coarse separately.
+- Still unverified: a known distance on a golf course with open sky.
+
 ## Planning results for the V0.1.x / V0.2 block (second phase 0)
 
 - New decisions D23-D38 in `docs/decisions.md`; `PROMPT.md` (sections 1, 2, 3, 6-9, 12, 13, 16-20, 23, 25), `docs/roadmap.md` and `docs/architecture.md` updated.
@@ -197,11 +205,12 @@ Phases 13–20 are outlined only; each block is detailed at the start of its fir
 
 ## Next conversation template
 
-> We are in phase 13 (GPS field test page). Phases 0-12 are done and deployed/committed; V0.2 is complete. The V0.3 plan is in PROMPT.md (sections 3, 7, 18, 25), docs/roadmap.md and decisions D31-D35. I attach PROMPT.md, STATUS.md, decisions.md, architecture.md, roadmap.md, `App.tsx`, `main.tsx`, `Home.tsx`, `index.css` and `BigButton.tsx`.
+>We are in phase 14 (weather snapshot per round). Phases 0-13 are done and deployed/committed; the GPS field test is closed (decisions D32 amendment and D39-D43 in docs/decisions.md). The V0.3 plan is in PROMPT.md (sections 3, 7, 18, 25), docs/roadmap.md and decisions D31-D38. I attach PROMPT.md, STATUS.md, decisions.md, architecture.md, roadmap.md, package.json, vite.config.ts, the app shell files and the code related to rounds, courses, the database, backup and Excel export (see the list at the end of the attached file).
 >
-> Goal: a hidden test page (not linked from the main flow) to check on the real iPhone, installed as a PWA, how single GPS fixes behave (D32): permission prompt and permission state, accuracy in meters, time to get a fix, behaviour after the screen locks and after the app goes to the background, and behaviour in airplane mode. The page logs each fix (timestamp, latitude, longitude, accuracy) on screen and lets me copy the log. One fix per tap, never `watchPosition`.
-> - Before coding: explain the plan, the files, and the checklist I should follow on the course.
-> - Out of scope: storing fixes in the database, weather, course geometry, any change to the in-round screens. No new dependencies, schema unchanged.
-> - Output of the phase: a written list of findings and decisions recorded in `docs/decisions.md` before building anything on GPS (phases 15-18 depend on them).
+> Goal (D34): a weather snapshot per round (temperature, precipitation, pressure, wind) from Open-Meteo using the COURSE coordinates and the round time, never the user's position. It is fetched when online and back-filled after the round if there was no connection. A weather failure must never block a round. The service lives in `services/weather.ts` behind a thin wrapper so the rest of the app only sees domain types. Verify Open-Meteo's terms of use (free for non-commercial use) before building.
+> - Every phase that adds stored data extends the JSON backup (still accepting older `schemaVersion` files), the Excel export (new sheets/columns, existing ones unchanged) and their tests, and Dexie changes add a new `version(n)` block with migration (D38).
+> - Course coordinates for the weather request: propose where they live in `courses.json` and how they get filled in.
+> - Before coding: explain the plan, the files, the data model change, and what I should test on a real device. Ask me anything blocking.
+> - Out of scope: GPS capture, course geometry, shots and clubs, any change to the in-round screens beyond showing the weather where the roadmap says. No new dependencies unless you justify them.
 >
 > UI language is Spanish; code, comments and commits in English. Follow section 23 of the prompt and finish with the STATUS.md block and the commit commands.
