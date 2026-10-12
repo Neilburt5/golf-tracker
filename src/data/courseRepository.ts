@@ -1,6 +1,23 @@
 import rawCourses from './courses.json';
 import type { Course } from '../domain/types';
 
+function validateCoordinates(value: unknown, label: string): void {
+  const coordinates = value as { latitude?: unknown; longitude?: unknown } | null;
+  const latitude = coordinates?.latitude;
+  const longitude = coordinates?.longitude;
+  if (typeof latitude !== 'number' || !Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+    throw new Error(`${label}: coordinates.latitude must be a number from -90 to 90`);
+  }
+  if (
+    typeof longitude !== 'number' ||
+    !Number.isFinite(longitude) ||
+    longitude < -180 ||
+    longitude > 180
+  ) {
+    throw new Error(`${label}: coordinates.longitude must be a number from -180 to 180`);
+  }
+}
+
 /** Validates the hand-edited courses file. Throws a clear error on the first problem. */
 export function validateCourses(raw: unknown): Course[] {
   if (!Array.isArray(raw)) {
@@ -28,6 +45,9 @@ export function validateCourses(raw: unknown): Course[] {
     }
     if (!Array.isArray(course.tees) || course.tees.length === 0) {
       throw new Error(`${label}: at least one tee is required`);
+    }
+    if ((course as { coordinates?: unknown }).coordinates !== undefined) {
+      validateCoordinates((course as { coordinates?: unknown }).coordinates, label);
     }
     if (!Array.isArray(course.holes) || course.holes.length !== course.numberOfHoles) {
       throw new Error(`${label}: holes must contain exactly ${course.numberOfHoles} entries`);

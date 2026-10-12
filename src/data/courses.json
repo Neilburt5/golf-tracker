@@ -3,6 +3,7 @@
     "id": "retamares-18",
     "name": "Club de Golf Retamares",
     "location": "Alalpardo, Madrid",
+    "coordinates": { "latitude": 40.60997228135536, "longitude": -3.4685218323625966 },
     "numberOfHoles": 18,
     "tees": ["Blancas", "Amarillas", "Azules", "Rojas"],
     "holes": [

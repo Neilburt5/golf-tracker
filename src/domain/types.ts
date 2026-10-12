@@ -7,12 +7,19 @@ export interface CourseHole {
   par: number;
 }
 
+export interface CourseCoordinates {
+  latitude: number;
+  longitude: number;
+}
+
 export interface Course {
   id: string;
   name: string;
   location: string;
   numberOfHoles: NumberOfHoles;
   tees: string[];
+    /** Course location, used only for the weather request (D34). Optional. */
+  coordinates?: CourseCoordinates;
   holes: CourseHole[];
 }
 
@@ -65,8 +72,34 @@ export interface RoundStats {
   upAndDownPercentage: number | null;
   threePutts: number;
 }
-/** A round together with all of its holes. Used by the rounds list and by backups. */
+/** A round together with all of its holes (and its weather, if known). Used by the rounds list and by backups. */
 export interface RoundWithHoles {
   round: Round;
   holes: Hole[];
+  weather?: RoundWeather;
+}
+
+/**
+ * Weather snapshot of a round (D44): aggregate of the hourly values of the round window.
+ * Wind is a 10 m grid value, not the wind at the ball.
+ */
+export interface RoundWeather {
+  roundId: string;
+  source: 'open-meteo';
+  /** Course coordinates used for the request (never the user's position). */
+  latitude: number;
+  longitude: number;
+  windowStart: string; // ISO UTC
+  windowEnd: string; // ISO UTC
+  /** Number of hourly slots averaged. */
+  hours: number;
+  fetchedAt: string; // ISO
+  temperatureC: number;
+  precipitationMm: number;
+  /** Surface pressure (not sea level). */
+  pressureHpa: number;
+  windSpeedKmh: number;
+  /** Direction the wind comes from, 0-359. Null when calm or cancelling out. */
+  windDirectionDeg: number | null;
+  windGustKmh: number | null;
 }
