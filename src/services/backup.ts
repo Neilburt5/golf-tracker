@@ -1,11 +1,11 @@
 import type { RoundRepository } from '../data/roundRepository';
 import { holeNumbersFor } from '../domain/calculations';
-import type { Hole, Round, RoundWithHoles } from '../domain/types';
+import type { Hole, Round, RoundWeather, RoundWithHoles } from '../domain/types';
 import { localDateStamp } from './filenames';
 
 export const BACKUP_APP = 'golf-tracker';
 /** Bump when the backup format changes in a way older readers cannot understand. */
-export const BACKUP_SCHEMA_VERSION = 1;
+export const BACKUP_SCHEMA_VERSION = 2;
 export const BACKUP_MIME = 'application/json';
 
 export interface BackupFile {
@@ -170,6 +170,63 @@ function parseHole(raw: unknown, roundId: string, path: string): Parsed<Hole> {
   });
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function parseWeather(raw: unknown, roundId: string, path: string): Parsed<RoundWeather> {
+  if (!isObject(raw)) return fail(`${path} must be an object`);
+
+  if (raw.roundId !== roundId) return fail(`${path}.roundId does not match its round`);
+  if (raw.source !== 'open-meteo') return fail(`${path}.source must be "open-meteo"`);
+
+  const { latitude, longitude, windowStart, windowEnd, hours, fetchedAt } = raw;
+  const { temperatureC, precipitationMm, pressureHpa, windSpeedKmh } = raw;
+  const { windDirectionDeg, windGustKmh } = raw;
+
+  if (!isFiniteNumber(latitude) || latitude < -90 || latitude > 90) {
+    return fail(`${path}.latitude must be a number from -90 to 90`);
+  }
+  if (!isFiniteNumber(longitude) || longitude < -180 || longitude > 180) {
+    return fail(`${path}.longitude must be a number from -180 to 180`);
+  }
+  if (!isDateString(windowStart)) return fail(`${path}.windowStart must be a date`);
+  if (!isDateString(windowEnd)) return fail(`${path}.windowEnd must be a date`);
+  if (!isInteger(hours, 1)) return fail(`${path}.hours must be an integer >= 1`);
+  if (!isDateString(fetchedAt)) return fail(`${path}.fetchedAt must be a date`);
+  if (!isFiniteNumber(temperatureC)) return fail(`${path}.temperatureC must be a number`);
+  if (!isFiniteNumber(precipitationMm) || precipitationMm < 0) {
+    return fail(`${path}.precipitationMm must be a number >= 0`);
+  }
+  if (!isFiniteNumber(pressureHpa)) return fail(`${path}.pressureHpa must be a number`);
+  if (!isFiniteNumber(windSpeedKmh) || windSpeedKmh < 0) {
+    return fail(`${path}.windSpeedKmh must be a number >= 0`);
+  }
+  if (windDirectionDeg !== null && (!isFiniteNumber(windDirectionDeg) || windDirectionDeg < 0 || windDirectionDeg > 360)) {
+    return fail(`${path}.windDirectionDeg must be null or a number from 0 to 360`);
+  }
+  if (windGustKmh !== null && (!isFiniteNumber(windGustKmh) || windGustKmh < 0)) {
+    return fail(`${path}.windGustKmh must be null or a number >= 0`);
+  }
+
+  return pass({
+    roundId,
+    source: 'open-meteo',
+    latitude,
+    longitude,
+    windowStart,
+    windowEnd,
+    hours,
+    fetchedAt,
+    temperatureC,
+    precipitationMm,
+    pressureHpa,
+    windSpeedKmh,
+    windDirectionDeg,
+    windGustKmh,
+  });
+}
+
 function parseRoundWithHoles(raw: unknown, path: string): Parsed<RoundWithHoles> {
   if (!isObject(raw)) return fail(`${path} must be an object`);
 
@@ -198,7 +255,14 @@ function parseRoundWithHoles(raw: unknown, path: string): Parsed<RoundWithHoles>
     );
   }
 
-  return pass({ round: round.value, holes });
+    // Weather is optional (absent in schemaVersion 1 files).
+  if (raw.weather === undefined || raw.weather === null) {
+    return pass({ round: round.value, holes });
+  }
+  const weather = parseWeather(raw.weather, round.value.id, `${path}.weather`);
+  if (!weather.ok) return weather;
+
+  return pass({ round: round.value, holes, weather: weather.value });
 }
 
 /** Parses and validates the text of a backup file. Never touches the database. */

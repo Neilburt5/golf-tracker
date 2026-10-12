@@ -5,8 +5,9 @@ import {
   isPlayed,
   isThreePutt,
 } from '../domain/calculations';
-import type { Hole, Round, RoundWithHoles } from '../domain/types';
+import type { Hole, Round, RoundWeather, RoundWithHoles } from '../domain/types';
 import { localDateStamp, slugify } from './filenames';
+
 
 export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -57,6 +58,42 @@ export type ExportCell = string | number | null;
 
 export type RoundRow = Record<(typeof ROUND_COLUMNS)[number], ExportCell>;
 export type HoleRow = Record<(typeof HOLE_COLUMNS)[number], ExportCell>;
+
+/** WEATHER sheet: one row per round with weather, joined to ROUND by Round ID (D45). */
+export const WEATHER_COLUMNS = [
+  'Round ID',
+  'Date',
+  'Course',
+  'Temperature C',
+  'Precipitation mm',
+  'Pressure hPa',
+  'Wind Speed kmh',
+  'Wind Direction deg',
+  'Wind Gust kmh',
+  'Weather Hours',
+  'Window Start',
+  'Window End',
+] as const;
+
+export type WeatherRow = Record<(typeof WEATHER_COLUMNS)[number], ExportCell>;
+
+/** Window times are UTC ISO text. Wind direction is where the wind comes from; empty when unknown. */
+export function buildWeatherRow(round: Round, weather: RoundWeather): WeatherRow {
+  return {
+    'Round ID': round.id,
+    Date: localDateStamp(round.date),
+    Course: round.courseName,
+    'Temperature C': weather.temperatureC,
+    'Precipitation mm': weather.precipitationMm,
+    'Pressure hPa': weather.pressureHpa,
+    'Wind Speed kmh': weather.windSpeedKmh,
+    'Wind Direction deg': weather.windDirectionDeg,
+    'Wind Gust kmh': weather.windGustKmh,
+    'Weather Hours': weather.hours,
+    'Window Start': weather.windowStart,
+    'Window End': weather.windowEnd,
+  };
+}
 
 /** Booleans are exported as 1/0. */
 function flag(value: boolean): 1 | 0 {
@@ -128,10 +165,14 @@ function toSheetData<K extends string>(
   return [[...columns], ...rows.map((row) => columns.map((column) => row[column]))];
 }
 
-/** Workbook with sheets ROUND and HOLES from already built rows. Shared by both export modes. */
+/**
+ * Workbook with sheets ROUND and HOLES (and WEATHER only when there is at least one weather row,
+ * so files without weather keep exactly the previous shape). Shared by both export modes.
+ */
 function workbookFromRows(
   roundRows: readonly RoundRow[],
   holeRows: readonly HoleRow[],
+  weatherRows: readonly WeatherRow[] = [],
 ): WorkBook {
   const workbook = utils.book_new();
 
@@ -140,12 +181,25 @@ function workbookFromRows(
 
   utils.book_append_sheet(workbook, roundSheet, 'ROUND');
   utils.book_append_sheet(workbook, holesSheet, 'HOLES');
+
+  if (weatherRows.length > 0) {
+    const weatherSheet = utils.aoa_to_sheet(toSheetData(WEATHER_COLUMNS, weatherRows));
+    utils.book_append_sheet(workbook, weatherSheet, 'WEATHER');
+  }
   return workbook;
 }
 
-/** Workbook for ONE round: ROUND (one row) and HOLES (one row per played hole). */
-export function buildWorkbook(round: Round, holes: readonly Hole[]): WorkBook {
-  return workbookFromRows([buildRoundRow(round, holes)], buildHoleRows(round, holes));
+/** Workbook for ONE round: ROUND (one row), HOLES (one row per played hole), WEATHER if known. */
+export function buildWorkbook(
+  round: Round,
+  holes: readonly Hole[],
+  weather?: RoundWeather,
+): WorkBook {
+  return workbookFromRows(
+    [buildRoundRow(round, holes)],
+    buildHoleRows(round, holes),
+    weather ? [buildWeatherRow(round, weather)] : [],
+  );
 }
 
 function compareText(a: string, b: string): number {
@@ -177,6 +231,7 @@ export function buildAllRoundsWorkbook(rounds: readonly RoundWithHoles[]): WorkB
   return workbookFromRows(
     selected.map(({ round, holes }) => buildRoundRow(round, holes)),
     selected.flatMap(({ round, holes }) => buildHoleRows(round, holes)),
+    selected.flatMap(({ round, weather }) => (weather ? [buildWeatherRow(round, weather)] : [])),
   );
 }
 
@@ -195,8 +250,9 @@ export function exportFilename(round: Round): string {
 export function createExcelFile(
   round: Round,
   holes: readonly Hole[],
+  weather?: RoundWeather,
 ): { blob: Blob; filename: string } {
-  const bytes = workbookToBytes(buildWorkbook(round, holes));
+  const bytes = workbookToBytes(buildWorkbook(round, holes, weather));
   return { blob: new Blob([bytes], { type: XLSX_MIME }), filename: exportFilename(round) };
 }
 
