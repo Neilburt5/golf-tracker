@@ -6,6 +6,8 @@ import { formatPercentage, formatToPar } from '../domain/format';
 import { useRoundSummary } from '../hooks/useRoundSummary';
 import { createExcelFile } from '../services/excelExport';
 import { shareFile } from '../services/shareFile';
+import { WeatherCard } from '../components/WeatherCard';
+import { useRoundWeather } from '../hooks/useWeather';
 
 function StatCell({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
@@ -32,7 +34,7 @@ export function RoundSummary() {
   const [exportMessage, setExportMessage] = useState<ExportMessage | null>(null);
 
   const { round, holes } = summary;
-
+  const { weather, outcome: weatherOutcome } = useRoundWeather(round);
   if (summary.loadState === 'loading') {
     return (
       <div className="screen">
@@ -89,7 +91,7 @@ export function RoundSummary() {
   const handleExport = async () => {
     setExportMessage(null);
     try {
-      const { blob, filename } = createExcelFile(round, holes);
+      const { blob, filename } = createExcelFile(round, holes, weather ?? undefined);
       const outcome = await shareFile(blob, filename);
       if (outcome === 'shared') setExportMessage({ tone: 'ok', text: 'Excel compartido.' });
       if (outcome === 'downloaded') setExportMessage({ tone: 'ok', text: 'Excel descargado.' });
@@ -147,7 +149,7 @@ export function RoundSummary() {
           detail={formatPercentage(stats.upAndDownPercentage)}
         />
       </section>
-
+      <WeatherCard weather={weather} outcome={weatherOutcome} />
       <section>
         <h2 className="subtitle">Hoyos (toca para corregir)</h2>
         <div className="stack">

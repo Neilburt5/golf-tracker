@@ -4,11 +4,13 @@ import { BigLink } from '../components/BigButton';
 import { useActiveRound } from '../hooks/useActiveRound';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { useTapSequence } from '../hooks/useTapSequence';
+import { useWeatherBackfill } from '../hooks/useWeather';
 
 export function Home() {
   const active = useActiveRound();
   const online = useOnlineStatus();
   const navigate = useNavigate();
+  useWeatherBackfill();
   // Hidden entry to the GPS field test (phase 13): tap the build line 5 times quickly.
   const onBuildTap = useTapSequence(5, 3000, () => navigate('/gps-test'));
   const hasActiveRound = active.status === 'ready' && active.round !== null;

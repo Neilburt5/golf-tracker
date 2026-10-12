@@ -10,6 +10,7 @@ import { useRounds, type RestoreOutcome } from '../hooks/useRounds';
 import { createBackupFile, type BackupErrorCode, type RestoreSummary } from '../services/backup';
 import { createAllRoundsExcelFile, selectRoundsForExport } from '../services/excelExport';
 import { shareFile } from '../services/shareFile';
+import { formatWeatherShort } from '../domain/weather';
 
 type Message = { tone: 'ok' | 'error'; text: string };
 
@@ -87,6 +88,12 @@ function RoundRow({ data, onDelete }: RoundRowProps) {
           <span className="muted">
             {date} · {round.tee}
           </span>
+          {data.weather && (
+            <>
+              <br />
+              <span className="muted">{formatWeatherShort(data.weather)}</span>
+            </>
+          )}
         </span>
         <span>
           <strong>{scoreText}</strong>
