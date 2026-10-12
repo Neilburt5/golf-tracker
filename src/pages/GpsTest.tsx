@@ -4,6 +4,7 @@ import { formatLines, formatLog } from '../domain/gpsLog'
 import {
   HIGH_ACCURACY_OPTIONS,
   NORMAL_ACCURACY_OPTIONS,
+  SHORT_CAPTURE_OPTIONS,
   useGpsTest,
 } from '../hooks/useGpsTest'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
@@ -124,9 +125,20 @@ export function GpsTest() {
           disabled={gps.pendingSince !== null}
           onClick={() => gps.requestFix(label, NORMAL_ACCURACY_OPTIONS)}
         >
-          Obtener posición (precisión normal)
+                    Obtener posición (precisión normal)
+        </BigButton>
+        <BigButton
+          disabled={gps.pendingSince !== null}
+          onClick={() => gps.requestShortCapture(label, SHORT_CAPTURE_OPTIONS)}
+        >
+          Captura corta (máx. 15 s)
         </BigButton>
       </div>
+      <p className="muted">
+        La captura corta escucha unos segundos y se detiene sola en cuanto llega una posición de
+        menos de 3 s de antigüedad y 20 m de precisión. Cada posición recibida queda en el
+        registro.
+      </p>
 
       {gps.pendingSince !== null && (
         <div className="warning" role="status">

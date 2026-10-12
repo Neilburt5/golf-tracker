@@ -1,6 +1,10 @@
+import { fixAgeMs, isAcceptableFix, type CaptureCriteria } from '../domain/gpsCapture'
+
 /**
  * Thin wrapper over navigator.geolocation for the GPS field test (phase 13).
- * One fix per call (D32): `getCurrentPosition` only, never `watchPosition`.
+ * `getSingleFix` takes one position per call. `startShortCapture` (phase 13b,
+ * D32 amendment) listens for at most a few seconds after a tap and always
+ * stops by itself; it is never continuous tracking.
  */
 
 export interface FixOptions {
@@ -53,5 +57,134 @@ export async function queryGeolocationPermission(): Promise<GeoPermissionState> 
     return status.state
   } catch {
     return 'unsupported'
+  }
+}
+
+/** Code of a capture the user stopped waiting for (not a browser error code). */
+export const CANCELLED_CODE = -1
+
+export interface ShortCaptureOptions extends CaptureCriteria {
+  /** The window always ends after this time. */
+  timeoutMs: number
+}
+
+export interface CaptureUpdate {
+  index: number
+  sinceStartMs: number
+  ageMs: number
+  latitude: number
+  longitude: number
+  accuracy: number
+  timestamp: number
+}
+
+export type ShortCaptureResult =
+  | {
+      ok: true
+      latitude: number
+      longitude: number
+      accuracy: number
+      timestamp: number
+      /** true: the position met the age and accuracy criteria. false: best effort at the end of the window. */
+      fresh: boolean
+      updates: number
+    }
+  | { ok: false; code: number; message: string; updates: number }
+
+export interface ShortCapture {
+  result: Promise<ShortCaptureResult>
+  /** Stops listening and resolves `result` with `CANCELLED_CODE`. */
+  cancel: () => void
+}
+
+/**
+ * Listens with `watchPosition` until a position is both fresh and precise
+ * enough, or until the window ends, and ALWAYS clears the watch before the
+ * result is delivered. Every position received is reported to `onUpdate`, so
+ * the log shows whether iOS keeps delivering new positions or stays frozen.
+ * Call it synchronously from a tap handler (keeps the user gesture).
+ */
+export function startShortCapture(
+  options: ShortCaptureOptions,
+  onUpdate: (update: CaptureUpdate) => void,
+): ShortCapture {
+  let watchId: number | null = null
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let finish: (result: ShortCaptureResult) => void = () => {}
+  let updates = 0
+  let latest: CaptureUpdate | null = null
+
+  const result = new Promise<ShortCaptureResult>((resolve) => {
+    let done = false
+    finish = (outcome) => {
+      if (done) return
+      done = true
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId)
+      if (timer !== null) clearTimeout(timer)
+      resolve(outcome)
+    }
+
+    if (!('geolocation' in navigator)) {
+      finish({ ok: false, code: 0, message: 'navigator.geolocation is not available', updates: 0 })
+      return
+    }
+
+    const startedAt = Date.now()
+
+    watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const now = Date.now()
+        updates += 1
+        const update: CaptureUpdate = {
+          index: updates,
+          sinceStartMs: now - startedAt,
+          ageMs: fixAgeMs(now, position.timestamp),
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+          timestamp: position.timestamp,
+        }
+        latest = update
+        onUpdate(update)
+        if (isAcceptableFix(update.ageMs, update.accuracy, options)) {
+          finish({
+            ok: true,
+            latitude: update.latitude,
+            longitude: update.longitude,
+            accuracy: update.accuracy,
+            timestamp: update.timestamp,
+            fresh: true,
+            updates,
+          })
+        }
+      },
+      (error) => {
+        // Only a denied permission ends the window early; other errors may recover.
+        if (error.code === 1) finish({ ok: false, code: 1, message: error.message, updates })
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: options.timeoutMs },
+    )
+
+    timer = setTimeout(() => {
+      if (latest) {
+        finish({
+          ok: true,
+          latitude: latest.latitude,
+          longitude: latest.longitude,
+          accuracy: latest.accuracy,
+          timestamp: latest.timestamp,
+          fresh: false,
+          updates,
+        })
+      } else {
+        finish({ ok: false, code: 3, message: 'No position received in the window', updates })
+      }
+    }, options.timeoutMs)
+  })
+
+  return {
+    result,
+    cancel: () =>
+      finish({ ok: false, code: CANCELLED_CODE, message: 'cancelled by user', updates }),
   }
 }

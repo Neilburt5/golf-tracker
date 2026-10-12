@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { formatCaptureUpdate } from '../domain/gpsCapture'
 import { formatLog, type GpsLogEntry } from '../domain/gpsLog'
 import {
+  CANCELLED_CODE,
   getSingleFix,
   queryGeolocationPermission,
+  startShortCapture,
   type FixOptions,
   type GeoPermissionState,
+  type ShortCaptureOptions,
 } from '../services/geolocation'
 import { loadStoredLog, saveStoredLog } from '../services/gpsTestStorage'
 
@@ -21,6 +25,13 @@ export const NORMAL_ACCURACY_OPTIONS: FixOptions = {
   highAccuracy: false,
   timeoutMs: FIX_TIMEOUT_MS,
   maximumAgeMs: 0,
+}
+
+/** Provisional values from D39/D40; phase 13b is meant to confirm or change them. */
+export const SHORT_CAPTURE_OPTIONS: ShortCaptureOptions = {
+  timeoutMs: 15_000,
+  maxAgeMs: 3_000,
+  maxAccuracyM: 20,
 }
 
 let entryCounter = 0
@@ -53,9 +64,11 @@ function loadInitialEntries(): GpsLogEntry[] {
 }
 
 /**
- * View-model of the GPS field test page. One fix per call to `requestFix`, never
- * `watchPosition` (D32). Also logs page lifecycle events so that lock and
- * background behaviour can be read from the log afterwards.
+ * View-model of the GPS field test page. `requestFix` takes one position per
+ * call; `requestShortCapture` listens for a few seconds after a tap and stops
+ * by itself (D32 amendment, phase 13b). There is no continuous tracking. Also
+ * logs page lifecycle events so that lock and background behaviour can be read
+ * from the log afterwards.
  */
 export function useGpsTest() {
   const [entries, setEntries] = useState<GpsLogEntry[]>(loadInitialEntries)
@@ -67,6 +80,7 @@ export function useGpsTest() {
   const requestIdRef = useRef(0)
   const pendingRef = useRef(false)
   const lastPermissionRef = useRef<GeoPermissionState | null>(null)
+  const cancelCaptureRef = useRef<(() => void) | null>(null)
 
   const addEntry = useCallback((entry: GpsLogEntry) => {
     setEntries((previous) => [...previous, entry].slice(-MAX_ENTRIES))
@@ -138,6 +152,13 @@ export function useGpsTest() {
     }
   }, [addEvent, applyPermission, refreshPermission])
 
+  // Leaving the page must never leave a watch running.
+  useEffect(() => {
+    return () => {
+      cancelCaptureRef.current?.()
+    }
+  }, [])
+
   /** Must be called straight from a tap handler (keeps the user gesture for iOS). */
   const requestFix = useCallback(
     (label: string, options: FixOptions) => {
@@ -187,8 +208,71 @@ export function useGpsTest() {
     [addEntry, refreshPermission],
   )
 
+  /**
+   * Short capture window (phase 13b): listens for a few seconds and stops by
+   * itself at the first fresh, precise position. Every position received is
+   * logged as an event; the result is logged as a FIX or an ERROR.
+   * Must be called straight from a tap handler.
+   */
+  const requestShortCapture = useCallback(
+    (label: string, options: ShortCaptureOptions) => {
+      if (pendingRef.current) return
+      pendingRef.current = true
+      requestIdRef.current += 1
+      const requestId = requestIdRef.current
+      const requestedAt = Date.now()
+      setPendingSince(requestedAt)
+
+      const capture = startShortCapture(options, (update) =>
+        addEvent(formatCaptureUpdate(update)),
+      )
+      cancelCaptureRef.current = capture.cancel
+
+      void capture.result.then((result) => {
+        // The user stopped waiting; cancelWait already released the page and logged it.
+        if (!result.ok && result.code === CANCELLED_CODE) return
+
+        const elapsedMs = Date.now() - requestedAt
+        if (result.ok) {
+          addEntry({
+            kind: 'fix',
+            id: nextId(),
+            label: `${label} (captura corta${result.fresh ? '' : ', sin posición fresca'})`,
+            requestedAt,
+            elapsedMs,
+            fixTimestamp: result.timestamp,
+            latitude: result.latitude,
+            longitude: result.longitude,
+            accuracy: result.accuracy,
+            highAccuracy: true,
+          })
+        } else {
+          addEntry({
+            kind: 'error',
+            id: nextId(),
+            label: `${label} (captura corta)`,
+            requestedAt,
+            elapsedMs,
+            code: result.code,
+            message: `${result.message} | updates=${result.updates}`,
+            highAccuracy: true,
+          })
+        }
+        if (requestIdRef.current === requestId) {
+          pendingRef.current = false
+          setPendingSince(null)
+          cancelCaptureRef.current = null
+        }
+        void refreshPermission()
+      })
+    },
+    [addEntry, addEvent, refreshPermission],
+  )
+
   /** Stops waiting for a request that never answers; a late answer is still logged. */
   const cancelWait = useCallback(() => {
+    cancelCaptureRef.current?.()
+    cancelCaptureRef.current = null
     requestIdRef.current += 1
     pendingRef.current = false
     setPendingSince(null)
@@ -213,6 +297,7 @@ export function useGpsTest() {
     visibility,
     standalone,
     requestFix,
+    requestShortCapture,
     cancelWait,
     clearLog,
     copyLog,

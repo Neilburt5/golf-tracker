@@ -344,6 +344,47 @@ Format: **Decision**, **Reason**, and alternatives where relevant.
 
 **Reason:** Prevents data that exists in the app but not in backups, which is the biggest risk as the dataset grows.
 
+## D39 — GPS fixes are validated by age, not trusted
+
+**Decision:** Every stored fix keeps `position.timestamp` next to the tap time, and its age (response time minus fix time) is shown with the accuracy. A fix older than a threshold is not used for a distance. Provisional threshold: 5 s, to be confirmed in phase 13b.
+
+**Reason:** Field test (2026-10-11, iPhone, installed PWA): after walking 113 m, `getCurrentPosition` with `maximumAge: 0` returned the same fix for over 140 s (age 81.6 s to 139.8 s) and the app measured 4 m. 19 of 20 fixes answered in 0.0 s, i.e. from a cache. Without an age check, shot distances would be silently wrong.
+
+---
+
+## D40 — Always high accuracy; quality shown, never assumed
+
+**Decision:** Fixes are requested with `enableHighAccuracy: true`. Accuracy is stored and shown. A fix with accuracy above 20 m is flagged as coarse and the user can retake it. The first fix after granting permission or after unlocking the phone is treated as coarse.
+
+**Reason:** High accuracy gave 3-4 m in the open; normal accuracy gave 16-18 m with the same latency. The first fix after permission was 35 m and after a 2 min lock 37 m; 25 s later both were 3-4 m. Reported accuracy can be optimistic (a "3 m" fix was about 9 m from other 3-4 m fixes), so plan for about +/-10 m.
+
+---
+
+## D41 — Page lifecycle: rely only on `visibilitychange`
+
+**Decision:** The app treats `visibilitychange` as the only reliable lifecycle signal. After the page becomes visible again, any pending GPS request is discarded and a new fix is taken. Nothing may assume that code ran while the screen was locked or the app was in the background.
+
+**Reason:** The log shows `visibilitychange` on every lock and app switch, and never `pagehide`, `pageshow`, `freeze` or `resume`. The page survived about 95 s in another app without reloading; longer periods are untested.
+
+---
+
+## D42 — GPS capture works offline, with lower accuracy
+
+**Decision:** Fix capture does not depend on the network. In airplane mode accuracy is expected to be about 20-35 m.
+
+**Reason:** In airplane mode 3 fixes arrived (age 3.3 s on the first), with accuracy 21-34 m versus 3-18 m online. Small sample, 30 s only; the 5-minute case is untested.
+
+---
+
+## D32 amendment (PROPOSED, pending decision)
+
+Single fixes via `getCurrentPosition` were not enough (D39). Proposal: allow a bounded `watchPosition` window only while capturing, started by a user tap and stopped at the first fix with age <= 3 s and accuracy <= 20 m, or after 15 s. Continuous tracking while walking stays rejected. To be tested in phase 13b before it is accepted.
+
+## D43 — Location permission is asked once, on the first GPS tap
+
+**Decision:** The app asks for location only when the user first taps a GPS action (a user gesture). It reads the state with the Permissions API. If the state is `denied`, it shows how to re-enable it in iOS Settings; no re-prompt handling is built.
+
+**Reason:** Field test (2026-10-11, iPhone, installed PWA): the iOS prompt appeared on the first tap, and after force-quitting and reopening the app it did not ask again and the state stayed `granted`. Caveat: one device, one session; the "Ask Next Time" setting was not tested.
 ---
 
 ## Open items
