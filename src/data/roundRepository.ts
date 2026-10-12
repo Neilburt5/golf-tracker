@@ -1,5 +1,5 @@
 import { db as defaultDb, type GolfDatabase } from './db';
-import type { Course, Hole, Round, RoundWithHoles } from '../domain/types';
+import type { Course, Hole, Round, RoundWeather, RoundWithHoles } from '../domain/types';
 
 export interface NewRoundInput {
   course: Course;
@@ -99,29 +99,43 @@ export function createRoundRepository(database: GolfDatabase, now: Clock = isoNo
   }
 
   /**
-   * Every round with its holes (ordered by hole number), newest round first.
+   * Every round with its holes (ordered by hole number) and weather when known, newest round first.
    * Read in a single transaction so the list is consistent.
    * Used by the rounds list and by the JSON backup.
    */
   async function listRoundsWithHoles(): Promise<RoundWithHoles[]> {
-    return database.transaction('r', database.rounds, database.holes, async () => {
-      const rounds = await database.rounds.toArray();
-      const allHoles = await database.holes.toArray();
+    return database.transaction(
+      'r',
+      database.rounds,
+      database.holes,
+      database.weather,
+      async () => {
+        const rounds = await database.rounds.toArray();
+        const allHoles = await database.holes.toArray();
+        const allWeather = await database.weather.toArray();
 
-      const holesByRound = new Map<string, Hole[]>();
-      for (const hole of allHoles) {
-        const list = holesByRound.get(hole.roundId);
-        if (list) list.push(hole);
-        else holesByRound.set(hole.roundId, [hole]);
-      }
+        const holesByRound = new Map<string, Hole[]>();
+        for (const hole of allHoles) {
+          const list = holesByRound.get(hole.roundId);
+          if (list) list.push(hole);
+          else holesByRound.set(hole.roundId, [hole]);
+        }
 
-      return rounds
-        .sort((a, b) => b.date.localeCompare(a.date) || b.updatedAt.localeCompare(a.updatedAt))
-        .map((round) => ({
-          round,
-          holes: (holesByRound.get(round.id) ?? []).sort((a, b) => a.holeNumber - b.holeNumber),
-        }));
-    });
+        const weatherByRound = new Map<string, RoundWeather>();
+        for (const weather of allWeather) weatherByRound.set(weather.roundId, weather);
+
+        return rounds
+          .sort((a, b) => b.date.localeCompare(a.date) || b.updatedAt.localeCompare(a.updatedAt))
+          .map((round): RoundWithHoles => {
+            const base: RoundWithHoles = {
+              round,
+              holes: (holesByRound.get(round.id) ?? []).sort((a, b) => a.holeNumber - b.holeNumber),
+            };
+            const weather = weatherByRound.get(round.id);
+            return weather ? { ...base, weather } : base;
+          });
+      },
+    );
   }
 
   /** Overwrites an existing hole row (autosave and "Save & next" both use this). */
@@ -155,38 +169,84 @@ export function createRoundRepository(database: GolfDatabase, now: Clock = isoNo
   }
 
   /**
-   * Permanently deletes a round and all of its holes in one transaction.
+   * Permanently deletes a round, its holes and its weather in one transaction.
    * Idempotent: deleting an unknown id does nothing.
    * The UI must ask for confirmation before calling this.
    */
   async function deleteRound(roundId: string): Promise<void> {
-    await database.transaction('rw', database.rounds, database.holes, async () => {
-      await database.holes.where('roundId').equals(roundId).delete();
-      await database.rounds.delete(roundId);
-    });
+    await database.transaction(
+      'rw',
+      database.rounds,
+      database.holes,
+      database.weather,
+      async () => {
+        await database.holes.where('roundId').equals(roundId).delete();
+        await database.weather.delete(roundId);
+        await database.rounds.delete(roundId);
+      },
+    );
   }
 
   /**
    * Inserts a round from a backup. NEVER overwrites: if a round with the same id
-   * already exists, nothing is written and 'skipped' is returned.
-   * Round and holes are written in one transaction, so a failure leaves nothing behind.
+   * already exists, nothing is written and 'skipped' is returned (weather included).
+   * Round, holes and weather are written in one transaction, so a failure leaves nothing behind.
    * Structural validation of the backup file happens in services/backup.ts;
-   * here we only guard the relation between the round and its holes.
+   * here we only guard the relation between the round and its holes and weather.
    */
   async function importRound(data: RoundWithHoles): Promise<ImportResult> {
-    const { round, holes } = data;
+    const { round, holes, weather } = data;
 
     if (holes.some((h) => h.roundId !== round.id)) {
       throw new Error(`Round ${round.id} contains holes that belong to another round`);
     }
+    if (weather && weather.roundId !== round.id) {
+      throw new Error(`Round ${round.id} contains weather that belongs to another round`);
+    }
 
-    return database.transaction('rw', database.rounds, database.holes, async () => {
-      if (await database.rounds.get(round.id)) {
-        return 'skipped' as const;
+    return database.transaction(
+      'rw',
+      database.rounds,
+      database.holes,
+      database.weather,
+      async () => {
+        if (await database.rounds.get(round.id)) {
+          return 'skipped' as const;
+        }
+        await database.rounds.add(round);
+        await database.holes.bulkAdd(holes);
+        if (weather) await database.weather.add(weather);
+        return 'imported' as const;
+      },
+    );
+  }
+
+  async function getWeather(roundId: string): Promise<RoundWeather | undefined> {
+    return database.weather.get(roundId);
+  }
+
+  /**
+   * Stores (or replaces) the weather of an existing round.
+   * It does NOT touch Round.updatedAt: a background fill must not make the backup nudge
+   * think the round was edited.
+   */
+  async function saveWeather(weather: RoundWeather): Promise<void> {
+    await database.transaction('rw', database.rounds, database.weather, async () => {
+      if (!(await database.rounds.get(weather.roundId))) {
+        throw new Error(`Round ${weather.roundId} does not exist`);
       }
-      await database.rounds.add(round);
-      await database.holes.bulkAdd(holes);
-      return 'imported' as const;
+      await database.weather.put(weather);
+    });
+  }
+
+  /** Rounds that have no weather yet, newest first. */
+  async function listRoundsMissingWeather(): Promise<Round[]> {
+    return database.transaction('r', database.rounds, database.weather, async () => {
+      const withWeather = new Set(await database.weather.toCollection().primaryKeys());
+      const rounds = await database.rounds.toArray();
+      return rounds
+        .filter((round) => !withWeather.has(round.id))
+        .sort((a, b) => b.date.localeCompare(a.date));
     });
   }
 
@@ -200,6 +260,9 @@ export function createRoundRepository(database: GolfDatabase, now: Clock = isoNo
     finishRound,
     deleteRound,
     importRound,
+    getWeather,
+    saveWeather,
+    listRoundsMissingWeather,
   };
 }
 
