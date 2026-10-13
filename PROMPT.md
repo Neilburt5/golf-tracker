@@ -154,9 +154,9 @@ Roadmap:
 
 ```text
 V0.1   → Basic round tracker                                   (done)
-V0.1.x → Export all rounds to one Excel file
-V0.2   → History and dashboard (in-app statistics)
-V0.3   → Environment and course data (GPS field test, weather, course geometry)
+V0.1.x → Export all rounds to one Excel file                   (done)
+V0.2   → History and dashboard (in-app statistics)             (done)
+V0.3   → Environment and course data (GPS field test, weather, course geometry) (In progress, GPS and weather done) 
 V0.4   → Shots and clubs (club per shot, GPS point per shot)
 V0.5   → Live on-course info (distance to green and landmarks, wind)
 V0.6   → Strokes Gained
@@ -270,6 +270,7 @@ Use Dexie (IndexedDB). Keep a relational structure; **do not store a whole round
 
 ```text
 Round (1) ──── (*) Hole          (V0.1)
+Round (1) ──── (1) Weather (V0.3, done)
 Hole  (1) ──── (*) Shot          (V0.4, planned)
 ```
 
@@ -341,6 +342,8 @@ Generated locally in the browser as `.xlsx` with two sheets.
 
 **HOLES** (one row per hole): Round ID, Date, Course, Hole, Par, Score, Score To Par, Putts, Fairway, GIR, Penalty, Bunker, Up & Down, 3-Putt.
 
+**WEATHER** (one row per round that has weather, joined by Round ID): see D45. It is only added when at least one round has weather.
+
 Philosophy: **ONE ROW = ONE HOLE.** No merged cells, no decorative formatting, no nested structures. Booleans as 1/0; "not applicable" as an empty cell. The data must import cleanly into Excel, Power BI, Python/pandas, and MATLAB.
 
 Two export modes (D24): a single round from its summary, and **all finished rounds** in one file with a fixed filename from the rounds list. Later versions add sheets (e.g. one row per shot) without changing the existing ones.
@@ -394,7 +397,7 @@ Unit tests (Vitest) for important logic, not for coverage's sake:
 - Validation rules.
 - Repositories with `fake-indexeddb`: save, restore, edit holes, restore in-progress round.
 - Excel export: verify generated rows, not the binary file.
-- Backup: old and new `schemaVersion` files.
+- Backup: schemaVersion 1 and 2 files.
 
 UI tests are not required.
 
@@ -465,15 +468,15 @@ V0.1
 8  Polish and real-round test                            (done)
 
 V0.1.x / V0.2
-9  Export all rounds to one Excel file
-10 Statistics domain (pure functions + tests)
-11 Dashboard UI: /stats, filters, best/worst, round list
-12 Charts, "where I lose strokes" breakdowns, backup nudge
+9  Export all rounds to one Excel file                          (done)
+10 Statistics domain (pure functions + tests)                   (done)
+11 Dashboard UI: /stats, filters, best/worst, round list        (done)
+12 Charts, "where I lose strokes" breakdowns, backup nudge      (done)
 
 V0.3
-13 GPS field test page + decisions from a real round
-14 Weather per round
-15 Course geometry: coordinates and "mark point" tool
+13 GPS field test page + decisions from a real round            (done)
+14 Weather per round                                            (done)
+15 Course geometry: coordinates and "mark point" tool           
 
 V0.4
 16 Shot model, club bag, data layer, backup and Excel extension

@@ -32,10 +32,10 @@ The domain layer is the long-term asset: the round summary, Excel export, histor
 src/
 ├── pages/         Home, NewRound, HoleTracking, RoundSummary, Rounds, Stats
 ├── components/    Stepper, YesNoToggle, HoleProgress, SVG charts, ...
-├── hooks/         useHoleForm, useRoundSummary, useRounds, useStats, useBackupStatus, ...
-├── domain/        types.ts, calculations.ts, validation.ts, resume.ts, format.ts, stats.ts, chartScale.ts, lossRanking.ts, backupNudge.ts
+├── hooks/         useHoleForm, useRoundSummary, useRounds, useStats, useBackupStatus, useWeather.ts, useGpsTest.ts, useTapSequence.ts
+├── domain/        types.ts, calculations.ts, validation.ts, resume.ts, format.ts, stats.ts, chartScale.ts, lossRanking.ts, backupNudge.ts, weather.ts, gpsCapture.ts, gpsLog.ts
 ├── data/          db.ts, roundRepository.ts, courseRepository.ts, courses.json
-├── services/      excelExport.ts, shareFile.ts, backup.ts, backupStatus.ts, filenames.ts, storagePersistence.ts
+├── services/      excelExport.ts, shareFile.ts, backup.ts, backupStatus.ts, filenames.ts, storagePersistence.ts, weather.ts, weatherBackfill.ts, geolocation.ts, gpsTestStorage.ts
 └── main.tsx
 ```
 
@@ -105,8 +105,7 @@ From V0.3 the course data gains coordinates: the course location (for weather) a
 
 Outline only; each block is detailed at the start of its first phase.
 
-- **GPS test page (phase 13):** logs single fixes with accuracy to verify permissions, screen lock behaviour and accuracy on the real iPhone before building on GPS (D32).
-- **Weather (phase 14):** a weather snapshot per round, from Open-Meteo using the course coordinates; fetched when online and back-filled later (D34). Lives in `services/weather.ts` behind a thin wrapper so the rest of the app only sees domain types. Failure never blocks a round.
+GPS test page (phase 13) and weather (phase 14) are done; see D32 amendment, D39-D43 and D44-D48.
 - **Shots (phases 16–17):** a `shots` table linked to `Hole` (club, GPS fix, accuracy, timestamp) and a club bag setting. Shot distance is derived from consecutive fixes. `Hole.score` remains the source of truth (D37). Shot capture is optional per hole and hands over to the existing hole screen at the putter.
 - **Live info (phase 18):** distance to green and landmarks from the stored coordinates, wind with headwind/crosswind relative to the line ball→green, with accuracy and age indicators and an offline fallback.
 - **Persistence:** each new table or field adds a new Dexie `version(n)` with migration. The backup `schemaVersion` is bumped and older files are still accepted. Export gains new sheets (e.g. one row per shot) without changing existing ones (D38).
@@ -124,6 +123,7 @@ Outline only; each block is detailed at the start of its first phase.
 ## Excel export
 
 `services/excelExport.ts` builds a workbook with SheetJS: sheet `ROUND` (one row per round) and sheet `HOLES` (one row per played hole). The row-building logic is pure and unit-tested; writing the file and sharing it (`navigator.share`, fallback to download) are thin wrappers. Two modes: one round from its summary, and all finished rounds in one file with a fixed filename from `/rounds` (D24).
+GPS test page (phase 13) and weather (phase 14) are done; see D32 amendment, D39-D43 and D44-D48.
 
 ## Testing
 
@@ -141,3 +141,4 @@ Vitest for domain calculations, statistics, validation, repositories (with `fake
 8. Wind from the weather service is a grid value at 10 m, not the wind at the ball.
 9. Statistics from few rounds are not conclusive; sample sizes are always shown.
 10. The last backup date lives in localStorage (D39): it is lost on reinstall and `shared` does not prove the file reached Files.
+11. Weather from a grid cell, filled only when the app is opened; Open-Meteo availability is not guaranteed (D48)

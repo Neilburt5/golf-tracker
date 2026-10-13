@@ -304,7 +304,7 @@ Format: **Decision**, **Reason**, and alternatives where relevant.
 
 ## D34 — Weather from Open-Meteo using the course coordinates, fetched online or back-filled
 
-**Decision:** A weather snapshot per round (temperature, precipitation, pressure, wind) comes from Open-Meteo using the **course** coordinates and the round time. It is fetched when online and back-filled after the round if there was no connection. Live wind in V0.5 uses the same service. Terms of use (free for non-commercial use) are verified at phase 14.
+**Decision:** A weather snapshot per round (temperature, precipitation, pressure, wind) comes from Open-Meteo using the **course** coordinates and the round time. It is fetched when online and back-filled after the round if there was no connection. Live wind in V0.5 uses the same service. Terms of use (free for non-commercial use) are verified at phase 14.Terms verified in phase 14 (see D48).
 
 **Reason:** The service is keyless, free for non-commercial use and has current and historical endpoints. Using course coordinates means the user's position never leaves the device, and back-filling removes the dependency on coverage during the round. Wind is a 10 m grid value, not the wind at the ball, so it is shown as an orientation with its time.
 
@@ -395,6 +395,51 @@ Format: **Decision**, **Reason**, and alternatives where relevant.
 
 **Reason:** Field test (2026-10-11, iPhone, installed PWA): the iOS prompt appeared on the first tap, and after force-quitting and reopening the app it did not ask again and the state stayed `granted`. Caveat: one device, one session; the "Ask Next Time" setting was not tested.
 ---
+---
+
+# Phase 14 — weather
+
+## D44 — Weather snapshot: fixed window, aggregated
+
+**Decision:** The weather of a round is one aggregate over a window that starts at the hour of `Round.date` and lasts 5 h (18 holes) or 3 h (9 holes). Slots with start < time <= end are used (precipitation of a slot is the sum of the preceding hour). Stored: mean temperature, total precipitation, mean surface pressure, mean wind speed (km/h), wind direction (speed-weighted vector mean, null if calm), max gust, and the number of hours used. Weather is only fetched once the window is over.
+
+**Reason:** The window does not depend on `updatedAt` (finished rounds stay editable, D15), so it is deterministic and testable. Surface pressure (not sea level) is what matters for air density at the ball. Wind is a 10 m grid value, not the wind at the ball (D34).
+
+**Limitation:** The window assumes the round starts when "Empezar ronda" is tapped. `windowStart` is stored so the assumption is visible.
+
+## D45 — Separate `weather` table; backup v2; WEATHER sheet
+
+**Decision:** Dexie v2 adds a `weather` table keyed by `roundId` (1:1). Saving weather does not change `Round.updatedAt`. The JSON backup becomes `schemaVersion` 2 with an optional `weather` per round; v1 files are still accepted. Restore never overwrites, so an existing round does not receive weather from a file (D19, D29). Excel gets a `WEATHER` sheet (one row per round, joined by Round ID), added only when at least one round has weather; ROUND and HOLES are unchanged.
+
+**Reason:** A background fill must not make the backup nudge (D39) think a round was edited. A separate sheet keeps existing analysis pipelines intact and mirrors the planned SHOTS sheet.
+
+**Rejected:** Weather fields inside `Round`; extra columns in ROUND.
+
+## D46 — Course coordinates are an optional field in `courses.json`
+
+**Decision:** `coordinates: { latitude, longitude }`, one point per course, copied by the user from a map. Validated when present. A course without coordinates gets no weather. The weather row stores the coordinates it used.
+
+**Reason:** The weather grid is about 9 km, so one point is enough. Optional keeps old data valid.
+
+## D47 — Weather requests
+
+**Decision:** Rounds started less than 85 days ago use the forecast API with `past_days` (documented maximum 92); older rounds use the archive API with `start_date`/`end_date`. `timeformat=unixtime`, `wind_speed_unit=kmh`. 10 s timeout. At most 5 rounds per run, stopping at the first failure. Triggers: opening Home and opening a round summary. Failures are silent and never block anything; there is no retry loop. The service worker does not cache these requests.
+
+**Reason:** Both endpoints return the same shape. Unix timestamps avoid timezone and DST logic.
+
+## D48 — Open-Meteo terms
+
+**Decision:** Free non-commercial use (private apps without ads or subscriptions qualify; limits 10,000 calls/day, 5,000/hour, 600/minute). Data is CC BY 4.0, so the summary shows "Datos meteorológicos: Open-Meteo.com (CC BY 4.0)" with a link, and the README credits it. Their server logs may keep coordinates for 90 days; only course coordinates are sent. Verified on 2026-10-12.
+
+**Open:** CORS from the installed iOS PWA is verified on the real device.
+
+## D49 — Backup nudge: values and storage (resolves D28)
+
+**Decision:** The date of the last backup is stored in `localStorage` (`golf-tracker:last-backup-at`), not in Dexie. It is recorded when "Guardar copia" ends as shared or downloaded, using the moment the file was built. The nudge shows from the first finished round if there was never a backup; otherwise at 3 finished rounds created or edited after the last backup, or at 30 days with at least 1. In-progress rounds are ignored. Restoring a backup does not set the date.
+
+**Reason:** It is device metadata, not golf data, so it stays out of the backup file and the Excel export. A small localStorage entry avoids a schema change.
+
+**Limitation:** It is lost on reinstall or on another device. `shared` only means the share sheet completed, so the UI says "Última copia", never "verificada".
 
 ## Open items
 

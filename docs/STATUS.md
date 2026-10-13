@@ -3,10 +3,10 @@
 _Paste this file at the start of every new conversation, together with the files relevant to the current phase._
 
 ## Current version
-V0.1 and V0.2 done (export all, history and dashboard, charts, backup nudge). Next block: V0.3 (environment and course data).
+V0.1 and V0.2 done. V0.3 in progress: GPS field test (phase 13) and weather per round (phase 14) done. Next: course geometry.
 
 ## Current phase
-**Phase 13 — GPS field test page + decisions from a real round** (next up)
+**Phase 15 — Course geometry: coordinates and "mark point" tool** (next up)
 
 ## Phases
 
@@ -28,8 +28,8 @@ V0.1.x / V0.2
 - [x] 12. Charts, "where I lose strokes" breakdowns, backup nudge
 
 V0.3
-- [ ] 13. GPS field test page + decisions from a real round
-- [ ] 14. Weather per round
+- [x] 13. GPS field test page + decisions from a real round
+- [x] 14. Weather per round
 - [ ] 15. Course geometry: coordinates and "mark point" tool
 
 V0.4
@@ -61,6 +61,9 @@ Phases 13–20 are outlined only; each block is detailed at the start of its fir
 - Elevation/slope discarded (D35). Distances in meters (D36). Shot tracking optional; `score` stays the truth (D37).
 - Every phase that adds data extends backup and export (D38).
 - Last backup date in localStorage; nudge at 1 / 3 / 30 (D39).
+- Last backup date in localStorage; nudge at 1 / 3 / 30 (D49).
+- GPS: bounded capture window (D32 amendment); every position validated by age and accuracy (D39); high accuracy, +/- shown (D40); rely only on `visibilitychange` (D41); capture works offline (D42); permission asked once on first GPS tap (D43).
+- Weather: fixed window of 5 h / 3 h, aggregated (D44); separate `weather` table, backup v2, WEATHER sheet (D45); optional course `coordinates` (D46); forecast API under 85 days, archive otherwise (D47); Open-Meteo terms and CC BY attribution (D48).
 
 ## Phase 2 results (domain)
 
@@ -176,6 +179,28 @@ Phases 13–20 are outlined only; each block is detailed at the start of its fir
 - To carry into phases 15-18: reuse `startShortCapture`; return the best position of the window (not the latest); report stale and coarse separately.
 - Still unverified: a known distance on a golf course with open sky.
 
+## Phase 13 results (GPS field test)
+
+- Hidden page `/gps-test` (tap the build line on Home 5 times): `pages/GpsTest.tsx`, `hooks/useGpsTest.ts`, `hooks/useTapSequence.ts`, `domain/gpsCapture.ts`, `domain/gpsLog.ts`, `services/geolocation.ts`, `services/gpsTestStorage.ts`. No schema change, no new dependencies, in-round screens untouched.
+- Findings recorded as D32 amendment and D39-D43: single `getCurrentPosition` calls return stale or coarse positions; a bounded `watchPosition` window (<= 15 s, accept age <= 3 s and accuracy <= 20 m) gave a fresh precise fix in a median 0.6 s; high accuracy gives 3-4 m against 16-18 m; `visibilitychange` is the only reliable lifecycle signal; capture works offline.
+- Caveats: one device, one session, test site with worse sky than the course. A known distance on the course is still to be checked.
+
+## Phase 14 results (weather per round)
+
+- New: `domain/weather.ts`, `services/weather.ts`, `services/weatherBackfill.ts`, `hooks/useWeather.ts`, `components/WeatherCard.tsx`.
+- Dexie v2 adds the `weather` table (1:1 with rounds). Saving weather does not touch `Round.updatedAt`. Backup `schemaVersion` 2 (v1 files still accepted). Excel gets a `WEATHER` sheet only when at least one round has weather; ROUND and HOLES unchanged. `courses.json` gains optional `coordinates`.
+- Weather shows in the round summary (with Open-Meteo attribution) and as one line per round in `/rounds`. Aggregate weather analytics stay in phase 19.
+- It is fetched when Home or a summary is opened, once the round window is over; failures are silent and never block anything. No new dependencies; in-round screens untouched.
+- 324 Vitest tests passing. `tsc -b` and `npm run lint` clean.
+- Choice made while testing: the "newer schema version" backup test now uses 3, since 2 is the current version.
+- Real-device checks (tick when done):
+  - [x] Online: weather card appears in a finished round's summary, values plausible (surface pressure about 920-950 hPa at Retamares).
+  - [x] CORS and fetch work from the installed PWA on the iPhone.
+  - [x] Update with existing rounds: all rounds still there (v1 to v2 migration).
+  - [x] Airplane mode: "Clima pendiente", app normal; fills later when online.
+  - [x] Backup JSON has `schemaVersion: 2` and `weather`; restoring a new and an old backup works.
+  - [x] Excel has the `WEATHER` sheet; ROUND and HOLES unchanged.
+
 ## Planning results for the V0.1.x / V0.2 block (second phase 0)
 
 - New decisions D23-D38 in `docs/decisions.md`; `PROMPT.md` (sections 1, 2, 3, 6-9, 12, 13, 16-20, 23, 25), `docs/roadmap.md` and `docs/architecture.md` updated.
@@ -205,12 +230,11 @@ Phases 13–20 are outlined only; each block is detailed at the start of its fir
 
 ## Next conversation template
 
->We are in phase 14 (weather snapshot per round). Phases 0-13 are done and deployed/committed; the GPS field test is closed (decisions D32 amendment and D39-D43 in docs/decisions.md). The V0.3 plan is in PROMPT.md (sections 3, 7, 18, 25), docs/roadmap.md and decisions D31-D38. I attach PROMPT.md, STATUS.md, decisions.md, architecture.md, roadmap.md, package.json, vite.config.ts, the app shell files and the code related to rounds, courses, the database, backup and Excel export (see the list at the end of the attached file).
+> We are in phase 15 (course geometry: coordinates and "mark point" tool). Phases 0-14 are done and deployed/committed. The V0.3 plan is in PROMPT.md (sections 3, 7, 12, 18, 25), docs/roadmap.md and decisions D31-D35, D39-D43 and D44-D48. I attach contexto-fase15.txt with PROMPT.md, STATUS.md, decisions.md, architecture.md, roadmap.md, package.json, vite.config.ts, the app shell, the course files and the GPS code from phase 13.
 >
-> Goal (D34): a weather snapshot per round (temperature, precipitation, pressure, wind) from Open-Meteo using the COURSE coordinates and the round time, never the user's position. It is fetched when online and back-filled after the round if there was no connection. A weather failure must never block a round. The service lives in `services/weather.ts` behind a thin wrapper so the rest of the app only sees domain types. Verify Open-Meteo's terms of use (free for non-commercial use) before building.
-> - Every phase that adds stored data extends the JSON backup (still accepting older `schemaVersion` files), the Excel export (new sheets/columns, existing ones unchanged) and their tests, and Dexie changes add a new `version(n)` block with migration (D38).
-> - Course coordinates for the weather request: propose where they live in `courses.json` and how they get filled in.
-> - Before coding: explain the plan, the files, the data model change, and what I should test on a real device. Ask me anything blocking.
-> - Out of scope: GPS capture, course geometry, shots and clubs, any change to the in-round screens beyond showing the weather where the roadmap says. No new dependencies unless you justify them.
+> Goal (D33): the user captures, standing on the course with the iPhone, the green center and landmarks (dogleg, water) of each hole with an in-app "mark point" tool. The tool outputs the coordinates in a format to paste into `courses.json`. It reuses the bounded GPS capture of phase 13 (D32 amendment, D39-D43): one tap, stops at the first fresh and precise position, accuracy always shown, never continuous tracking.
+> - Before coding: explain the plan, the files, the `courses.json` structure (per-hole green center and landmarks, all optional), and the checklist for the course. Propose how the points are kept while walking the course (so nothing is lost if Safari closes) and how the user gets them out (copy, share). Ask me anything blocking.
+> - Out of scope: storing points in the database, shots and clubs, weather changes, any change to the in-round screens, live distances (phase 18). No new dependencies unless justified. Schema unchanged.
+> - Output of the phase: the tool, the extended `courses.json` validation (`validateCourses`, still accepting courses without geometry), tests, and decisions recorded in `docs/decisions.md`.
 >
 > UI language is Spanish; code, comments and commits in English. Follow section 23 of the prompt and finish with the STATUS.md block and the commit commands.

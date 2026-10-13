@@ -2,7 +2,7 @@
 
 ## Current version
 
-**V0.1 and V0.2 — done and deployed.** Next block: **V0.3** (environment and course data).
+**V0.1 and V0.2 — done and deployed.** In progress: **V0.3** (environment and course data).
 
 ## Versions
 
@@ -11,7 +11,7 @@
 | V0.1 | Basic round tracker: play a full round, review, save locally, export to Excel, JSON backup | Done |
 | V0.1.x | Export all rounds to one Excel file | Done |
 | V0.2 | History and dashboard (in-app statistics) | Done |
-| V0.3 | Environment and course data: GPS field test, weather per round, course geometry | Next | Planned |
+| V0.3 | Environment and course data: GPS field test, weather per round, course geometry |In progress |
 | V0.4 | Shots and clubs: club per shot, GPS point per shot | Planned |
 | V0.5 | Live on-course info: distance to green and landmarks, wind | Planned |
 | V0.6 | Strokes Gained (needs a documented reference methodology) | Planned |
@@ -39,9 +39,9 @@ The roadmap was re-cut after V0.1 (D31). The originally separate shot-by-shot (V
 | 10 | Statistics domain | `domain/stats.ts`: aggregates, 9/18 separation, incomplete/in-progress rules, by par type / hole / course, trend series; Vitest suite; no UI | Done |
 | 11 | Dashboard UI | ... | Done |
 | 12 | Charts and breakdowns | Plain-SVG charts (score-to-par evolution, par-type, hole-number, putts with/without GIR); last-backup date and nudge | Done |
-| 13 | GPS field test | ... | Next |
-| 14 | Weather per round | Course coordinates, Open-Meteo fetch online and back-fill after the round; shown in summary, Excel, dashboard; schema migration | Pending |
-| 15 | Course geometry | Green centers and landmarks per hole; in-app "mark point" tool that outputs coordinates for `courses.json` | Pending |
+| 13 | GPS field test | ... | Done |
+| 14 | Weather per round | Course coordinates, Open-Meteo fetch online and back-fill after the round; shown in summary, Excel, dashboard; schema migration | Done |
+| 15 | Course geometry | Green centers and landmarks per hole; in-app "mark point" tool that outputs coordinates for `courses.json` | Next |
 | 16 | Shot data layer | `Shot` table, club bag settings, validation and reconciliation with score, backup and Excel (SHOTS sheet) extension; tests, no UI | Pending |
 | 17 | Shot capture UI | Choose club, store GPS point, putter hands over to the hole screen; edit/delete shots; works without GPS permission | Pending |
 | 18 | Live distances and wind | Distance to green and landmarks, headwind/crosswind, accuracy and age indicators, offline fallback | Pending |
