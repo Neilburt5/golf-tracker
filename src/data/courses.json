@@ -6,25 +6,138 @@
     "coordinates": { "latitude": 40.60997228135536, "longitude": -3.4685218323625966 },
     "numberOfHoles": 18,
     "tees": ["Blancas", "Amarillas", "Azules", "Rojas"],
-    "holes": [
-      { "number": 1, "par": 4 },
-      { "number": 2, "par": 3 },
-      { "number": 3, "par": 5 },
-      { "number": 4, "par": 4 },
-      { "number": 5, "par": 4 },
-      { "number": 6, "par": 4 },
-      { "number": 7, "par": 5 },
-      { "number": 8, "par": 4 },
-      { "number": 9, "par": 3 },
-      { "number": 10, "par": 5 },
-      { "number": 11, "par": 4 },
-      { "number": 12, "par": 3 },
-      { "number": 13, "par": 5 },
-      { "number": 14, "par": 4 },
-      { "number": 15, "par": 4 },
-      { "number": 16, "par": 4 },
-      { "number": 17, "par": 3 },
-      { "number": 18, "par": 4 }
+        "holes": [
+      {
+        "number": 1,
+        "par": 4,
+        "green": { "latitude": 40.610935, "longitude": -3.463889 },
+        "landmarks": [
+          { "kind": "dogleg", "latitude": 40.610926, "longitude": -3.465617 }
+        ]
+      },
+      {
+        "number": 2,
+        "par": 3,
+        "green": { "latitude": 40.60918, "longitude": -3.463071 }
+      },
+      {
+        "number": 3,
+        "par": 5,
+        "green": { "latitude": 40.605591, "longitude": -3.46696 },
+        "landmarks": [
+          { "kind": "bunker", "latitude": 40.606362, "longitude": -3.466478 }
+        ]
+      },
+      {
+        "number": 4,
+        "par": 4,
+        "green": { "latitude": 40.607539, "longitude": -3.463635 },
+        "landmarks": [
+          { "kind": "bunker", "label": "derecha", "latitude": 40.606348, "longitude": -3.46469 },
+          { "kind": "bunker", "label": "izquierda", "latitude": 40.606633, "longitude": -3.464899 }
+        ]
+      },
+      {
+        "number": 5,
+        "par": 4,
+        "green": { "latitude": 40.606965, "longitude": -3.460514 },
+        "landmarks": [
+          { "kind": "testero", "latitude": 40.607259, "longitude": -3.461289 }
+        ]
+      },
+      {
+        "number": 6,
+        "par": 4,
+        "green": { "latitude": 40.61016, "longitude": -3.462783 },
+        "landmarks": [
+          { "kind": "bunker", "latitude": 40.609165, "longitude": -3.462622 },
+          { "kind": "water", "label": "río", "latitude": 40.609729, "longitude": -3.462759 }
+        ]
+      },
+      {
+        "number": 7,
+        "par": 5,
+        "green": { "latitude": 40.612708, "longitude": -3.467225 },
+        "landmarks": [
+          { "kind": "dogleg", "label": "1", "latitude": 40.612294, "longitude": -3.464167 },
+          { "kind": "dogleg", "label": "2", "latitude": 40.612999, "longitude": -3.465998 }
+        ]
+      },
+      {
+        "number": 8,
+        "par": 4,
+        "green": { "latitude": 40.611422, "longitude": -3.464262 },
+        "landmarks": [
+          { "kind": "bunker", "latitude": 40.61184, "longitude": -3.465546 }
+        ]
+      },
+      {
+        "number": 9,
+        "par": 3,
+        "green": { "latitude": 40.610962, "longitude": -3.467504 }
+      },
+      {
+        "number": 10,
+        "par": 5,
+        "green": { "latitude": 40.609938, "longitude": -3.475007 },
+        "landmarks": [
+          { "kind": "bunker", "latitude": 40.610162, "longitude": -3.471826 },
+          { "kind": "water", "label": "lago", "latitude": 40.610006, "longitude": -3.473708 }
+        ]
+      },
+      {
+        "number": 11,
+        "par": 4,
+        "green": { "latitude": 40.60706, "longitude": -3.475639 },
+        "landmarks": [
+          { "kind": "bunker", "label": "derecha", "latitude": 40.608152, "longitude": -3.475619 },
+          { "kind": "bunker", "label": "izquierda", "latitude": 40.608278, "longitude": -3.47523 }
+        ]
+      },
+      {
+        "number": 12,
+        "par": 3,
+        "green": { "latitude": 40.607741, "longitude": -3.472918 }
+      },
+      {
+        "number": 13,
+        "par": 5,
+        "green": { "latitude": 40.607807, "longitude": -3.467158 }
+      },
+      {
+        "number": 14,
+        "par": 4,
+        "green": { "latitude": 40.609524, "longitude": -3.464477 },
+        "landmarks": [
+          { "kind": "bunker", "latitude": 40.60851, "longitude": -3.465677 }
+        ]
+      },
+      {
+        "number": 15,
+        "par": 4,
+        "green": { "latitude": 40.608623, "longitude": -3.469196 },
+        "landmarks": [
+          { "kind": "testero", "latitude": 40.608787, "longitude": -3.467855 }
+        ]
+      },
+      {
+        "number": 16,
+        "par": 4,
+        "green": { "latitude": 40.608277, "longitude": -3.47397 },
+        "landmarks": [
+          { "kind": "bunker", "latitude": 40.608443, "longitude": -3.472166 }
+        ]
+      },
+      {
+        "number": 17,
+        "par": 3,
+        "green": { "latitude": 40.60896, "longitude": -3.474727 }
+      },
+      {
+        "number": 18,
+        "par": 4,
+        "green": { "latitude": 40.609664, "longitude": -3.470019 }
+      }
     ]
   }
 ]
