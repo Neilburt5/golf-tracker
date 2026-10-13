@@ -447,3 +447,43 @@ Format: **Decision**, **Reason**, and alternatives where relevant.
 - D29: whether restore needs a "replace existing with confirmation" option.
 - D33: whether OpenStreetMap golf data is worth researching (check license first).
 - D34: verify Open-Meteo terms of use in phase 14.
+
+## D50 — Course geometry format in `courses.json`
+
+**Decision:** Each hole may have `green: { latitude, longitude }` (center of the green) and
+`landmarks: [{ kind, latitude, longitude, label? }]`. All optional; courses and holes without
+geometry stay valid. No `accuracy` field. `kind` is one of:
+
+- `dogleg`: corner of the fairway where the line of play turns.
+- `water`: river or lake. `label` tells them apart (e.g. "río", "lago").
+- `bunker`: `label` tells them apart when there are several (e.g. "derecha", "izquierda").
+- `testero`: the user's own term (UI label "Testero"). A balcony: a raised spot at the top of
+  a slope from which the green is visible below. The player stops there and plays down to the
+  green from above. It is a position to play from, not a hazard.
+
+`green` is deliberately not a landmark kind: each hole has one green, and a second place for
+it would make "where is the green" ambiguous. Front and back of the green, and the near and far
+edges of water, may be added later as extra optional fields without breaking existing data.
+
+**Reason:** Live distances (phase 18) need the center of the green and a few landmarks.
+
+## D51 — Geometry is measured by hand on a satellite map (amends D33)
+
+**Decision:** The user copies the coordinates from Google Maps in satellite view at home and
+pastes them into `courses.json`. The in-app "mark point" tool is not built. The bounded GPS
+capture (D32 amendment) stays available if satellite measurements prove insufficient.
+
+**Reason:** Walking to a spot during a round is slow and disrupts play, and the ball does not
+always land there. Phone GPS gave 14-23 m accuracy in the field test; a satellite image allows
+a few meters and any point can be marked, including water. Personal use, no external
+database, no scraping, no new code to maintain.
+
+**Rejected:** In-app capture on the course (D33 original).
+
+## D52 — Sanity check of geometry against the course coordinates
+
+**Decision:** If the course has `coordinates`, `validateCourses` rejects any green or landmark
+farther than 3000 m from them.
+
+**Reason:** Catches a wrong sign or a mistyped digit when pasting, which would otherwise break
+distances silently in phase 18.

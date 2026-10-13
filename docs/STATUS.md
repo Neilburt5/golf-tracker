@@ -3,10 +3,10 @@
 _Paste this file at the start of every new conversation, together with the files relevant to the current phase._
 
 ## Current version
-V0.1 and V0.2 done. V0.3 in progress: GPS field test (phase 13) and weather per round (phase 14) done. Next: course geometry.
+V0.1 and V0.2 done. V0.3 in progress: GPS field test (13), weather (14) and course geometry (15) done. Next: V0.4 shots and clubs.
 
 ## Current phase
-**Phase 15 — Course geometry: coordinates and "mark point" tool** (next up)
+**Phase 16 — Shot model, club bag, data layer, backup and Excel extension** (next up)
 
 ## Phases
 
@@ -30,7 +30,7 @@ V0.1.x / V0.2
 V0.3
 - [x] 13. GPS field test page + decisions from a real round
 - [x] 14. Weather per round
-- [ ] 15. Course geometry: coordinates and "mark point" tool
+- [x] 15. Course geometry: green centers and landmarks measured on a satellite map
 
 V0.4
 - [ ] 16. Shot model, club bag, data layer, backup and Excel extension
@@ -64,6 +64,7 @@ Phases 13–20 are outlined only; each block is detailed at the start of its fir
 - Last backup date in localStorage; nudge at 1 / 3 / 30 (D49).
 - GPS: bounded capture window (D32 amendment); every position validated by age and accuracy (D39); high accuracy, +/- shown (D40); rely only on `visibilitychange` (D41); capture works offline (D42); permission asked once on first GPS tap (D43).
 - Weather: fixed window of 5 h / 3 h, aggregated (D44); separate `weather` table, backup v2, WEATHER sheet (D45); optional course `coordinates` (D46); forecast API under 85 days, archive otherwise (D47); Open-Meteo terms and CC BY attribution (D48).
+- Course geometry measured by hand on Google Maps satellite view, no in-app tool (D51, amends D33); format with `green` and `landmarks` of kind dogleg / water / bunker / testero (D50); sanity check of 3 km against the course coordinates (D52).
 
 ## Phase 2 results (domain)
 
@@ -200,6 +201,15 @@ Phases 13–20 are outlined only; each block is detailed at the start of its fir
   - [x] Airplane mode: "Clima pendiente", app normal; fills later when online.
   - [x] Backup JSON has `schemaVersion: 2` and `weather`; restoring a new and an old backup works.
   - [x] Excel has the `WEATHER` sheet; ROUND and HOLES unchanged.
+
+  ## Phase 15 results (course geometry)
+
+- Plan changed during the phase: instead of an in-app "mark point" tool, the user copies coordinates from Google Maps in satellite view at home (D51). Walking to a spot during a round is slow and disrupts play, and satellite gives a few meters of accuracy against 14-23 m from the phone.
+- `CourseHole` gains optional `green` and `landmarks` (`Landmark`, `LandmarkKind`, `GeoPoint` in `domain/types.ts`). `validateCourses` checks ranges, `kind`, `label` and a distance sanity check against the course coordinates (`MAX_DISTANCE_FROM_COURSE_M` = 3000). Courses and holes without geometry stay valid.
+- `courses.json`: all 18 greens of Retamares and their landmarks (doglegs of holes 1 and 7, bunkers, river of hole 6, lake of hole 10, testeros of holes 5 and 15).
+- Tests in `tests/courseGeometry.test.ts`. No new dependencies, schema unchanged, in-round screens untouched.
+- Choices: `green` is not a landmark kind (D50); `testero` is the user's own term for a balcony from which the green is played (D50); `distanceMeters` is imported from `domain/gpsLog.ts` (move it to its own file if the GPS test page is ever removed).
+- Pending: front and back of the green, and near/far edges of the river and lake, to be measured later (likely D53). The distances to each point are not used until phase 18.
 
 ## Planning results for the V0.1.x / V0.2 block (second phase 0)
 

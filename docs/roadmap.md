@@ -41,8 +41,8 @@ The roadmap was re-cut after V0.1 (D31). The originally separate shot-by-shot (V
 | 12 | Charts and breakdowns | Plain-SVG charts (score-to-par evolution, par-type, hole-number, putts with/without GIR); last-backup date and nudge | Done |
 | 13 | GPS field test | ... | Done |
 | 14 | Weather per round | Course coordinates, Open-Meteo fetch online and back-fill after the round; shown in summary, Excel, dashboard; schema migration | Done |
-| 15 | Course geometry | Green centers and landmarks per hole; in-app "mark point" tool that outputs coordinates for `courses.json` | Next |
-| 16 | Shot data layer | `Shot` table, club bag settings, validation and reconciliation with score, backup and Excel (SHOTS sheet) extension; tests, no UI | Pending |
+| 15 | Course geometry | Green centers and landmarks per hole; in-app "mark point" tool that outputs coordinates for `courses.json` | Done |
+| 16 | Shot data layer | `Shot` table, club bag settings, validation and reconciliation with score, backup and Excel (SHOTS sheet) extension; tests, no UI | Next |
 | 17 | Shot capture UI | Choose club, store GPS point, putter hands over to the hole screen; edit/delete shots; works without GPS permission | Pending |
 | 18 | Live distances and wind | Distance to green and landmarks, headwind/crosswind, accuracy and age indicators, offline fallback | Pending |
 | 19 | Shot and weather analytics | Average distance per club, left/right relative to the line to the green, weather effects with visible sample sizes | Pending |
