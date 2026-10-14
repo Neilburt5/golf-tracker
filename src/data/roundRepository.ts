@@ -1,5 +1,14 @@
 import { db as defaultDb, type GolfDatabase } from './db';
-import type { Course, Hole, Round, RoundWeather, RoundWithHoles } from '../domain/types';
+import { validateShot } from '../domain/shots';
+import type {
+  Course,
+  Hole,
+  Round,
+  RoundWeather,
+  RoundWithHoles,
+  Shot,
+  ShotInput,
+} from '../domain/types';
 
 export interface NewRoundInput {
   course: Course;
@@ -47,6 +56,10 @@ function buildHoles(
     });
   }
   return holes;
+}
+
+function sortShots(shots: Shot[]): Shot[] {
+  return shots.sort((a, b) => a.holeNumber - b.holeNumber || a.sequence - b.sequence);
 }
 
 export function createRoundRepository(database: GolfDatabase, now: Clock = isoNow) {
@@ -99,8 +112,8 @@ export function createRoundRepository(database: GolfDatabase, now: Clock = isoNo
   }
 
   /**
-   * Every round with its holes (ordered by hole number) and weather when known, newest round first.
-   * Read in a single transaction so the list is consistent.
+   * Every round with its holes (ordered by hole number), weather and shots when known,
+   * newest round first. Read in a single transaction so the list is consistent.
    * Used by the rounds list and by the JSON backup.
    */
   async function listRoundsWithHoles(): Promise<RoundWithHoles[]> {
@@ -109,10 +122,12 @@ export function createRoundRepository(database: GolfDatabase, now: Clock = isoNo
       database.rounds,
       database.holes,
       database.weather,
+      database.shots,
       async () => {
         const rounds = await database.rounds.toArray();
         const allHoles = await database.holes.toArray();
         const allWeather = await database.weather.toArray();
+        const allShots = await database.shots.toArray();
 
         const holesByRound = new Map<string, Hole[]>();
         for (const hole of allHoles) {
@@ -124,15 +139,25 @@ export function createRoundRepository(database: GolfDatabase, now: Clock = isoNo
         const weatherByRound = new Map<string, RoundWeather>();
         for (const weather of allWeather) weatherByRound.set(weather.roundId, weather);
 
+        const shotsByRound = new Map<string, Shot[]>();
+        for (const shot of allShots) {
+          const list = shotsByRound.get(shot.roundId);
+          if (list) list.push(shot);
+          else shotsByRound.set(shot.roundId, [shot]);
+        }
+
         return rounds
           .sort((a, b) => b.date.localeCompare(a.date) || b.updatedAt.localeCompare(a.updatedAt))
           .map((round): RoundWithHoles => {
-            const base: RoundWithHoles = {
+            const data: RoundWithHoles = {
               round,
               holes: (holesByRound.get(round.id) ?? []).sort((a, b) => a.holeNumber - b.holeNumber),
             };
             const weather = weatherByRound.get(round.id);
-            return weather ? { ...base, weather } : base;
+            if (weather) data.weather = weather;
+            const shots = shotsByRound.get(round.id);
+            if (shots && shots.length > 0) data.shots = sortShots(shots);
+            return data;
           });
       },
     );
@@ -169,7 +194,7 @@ export function createRoundRepository(database: GolfDatabase, now: Clock = isoNo
   }
 
   /**
-   * Permanently deletes a round, its holes and its weather in one transaction.
+   * Permanently deletes a round, its holes, its weather and its shots in one transaction.
    * Idempotent: deleting an unknown id does nothing.
    * The UI must ask for confirmation before calling this.
    */
@@ -179,8 +204,10 @@ export function createRoundRepository(database: GolfDatabase, now: Clock = isoNo
       database.rounds,
       database.holes,
       database.weather,
+      database.shots,
       async () => {
         await database.holes.where('roundId').equals(roundId).delete();
+        await database.shots.where('roundId').equals(roundId).delete();
         await database.weather.delete(roundId);
         await database.rounds.delete(roundId);
       },
@@ -189,13 +216,13 @@ export function createRoundRepository(database: GolfDatabase, now: Clock = isoNo
 
   /**
    * Inserts a round from a backup. NEVER overwrites: if a round with the same id
-   * already exists, nothing is written and 'skipped' is returned (weather included).
-   * Round, holes and weather are written in one transaction, so a failure leaves nothing behind.
-   * Structural validation of the backup file happens in services/backup.ts;
-   * here we only guard the relation between the round and its holes and weather.
+   * already exists, nothing is written and 'skipped' is returned (weather and shots included).
+   * Round, holes, weather and shots are written in one transaction, so a failure leaves
+   * nothing behind. Structural validation of the backup file happens in services/backup.ts;
+   * here we only guard the relation between the round and what hangs from it.
    */
   async function importRound(data: RoundWithHoles): Promise<ImportResult> {
-    const { round, holes, weather } = data;
+    const { round, holes, weather, shots } = data;
 
     if (holes.some((h) => h.roundId !== round.id)) {
       throw new Error(`Round ${round.id} contains holes that belong to another round`);
@@ -203,12 +230,16 @@ export function createRoundRepository(database: GolfDatabase, now: Clock = isoNo
     if (weather && weather.roundId !== round.id) {
       throw new Error(`Round ${round.id} contains weather that belongs to another round`);
     }
+    if (shots?.some((s) => s.roundId !== round.id)) {
+      throw new Error(`Round ${round.id} contains shots that belong to another round`);
+    }
 
     return database.transaction(
       'rw',
       database.rounds,
       database.holes,
       database.weather,
+      database.shots,
       async () => {
         if (await database.rounds.get(round.id)) {
           return 'skipped' as const;
@@ -216,6 +247,7 @@ export function createRoundRepository(database: GolfDatabase, now: Clock = isoNo
         await database.rounds.add(round);
         await database.holes.bulkAdd(holes);
         if (weather) await database.weather.add(weather);
+        if (shots && shots.length > 0) await database.shots.bulkAdd(shots);
         return 'imported' as const;
       },
     );
@@ -250,6 +282,85 @@ export function createRoundRepository(database: GolfDatabase, now: Clock = isoNo
     });
   }
 
+  /** Shots of one hole, ordered by sequence. */
+  async function getHoleShots(roundId: string, holeNumber: number): Promise<Shot[]> {
+    const shots = await database.shots
+      .where('roundId')
+      .equals(roundId)
+      .filter((shot) => shot.holeNumber === holeNumber)
+      .toArray();
+    return shots.sort((a, b) => a.sequence - b.sequence);
+  }
+
+  /** Every shot of a round, ordered by hole number and sequence. */
+  async function getRoundShots(roundId: string): Promise<Shot[]> {
+    return sortShots(await database.shots.where('roundId').equals(roundId).toArray());
+  }
+
+  /**
+   * Replaces ALL the shots of one hole in a single transaction. `sequence` is assigned from the
+   * array order (1, 2, 3...), so deleting or reordering shots never collides with the unique
+   * index. An empty array clears the hole. Shots are user data, so Round.updatedAt IS bumped
+   * (unlike the weather fill) and the backup nudge counts them.
+   * Throws, writing nothing, if the round or hole does not exist, a shot is invalid, or an id
+   * is repeated. It never looks at the score: a mismatch with it must not block saving (D37).
+   */
+  async function saveHoleShots(
+    roundId: string,
+    holeNumber: number,
+    input: readonly ShotInput[],
+  ): Promise<Shot[]> {
+    return database.transaction(
+      'rw',
+      database.rounds,
+      database.holes,
+      database.shots,
+      async () => {
+        const round = await database.rounds.get(roundId);
+        if (!round) throw new Error(`Round ${roundId} does not exist`);
+
+        const hole = await database.holes
+          .where('[roundId+holeNumber]')
+          .equals([roundId, holeNumber])
+          .first();
+        if (!hole) throw new Error(`Round ${roundId} has no hole ${holeNumber}`);
+
+        const shots: Shot[] = input.map((shot, index) => ({
+          id: shot.id,
+          roundId,
+          holeNumber,
+          sequence: index + 1,
+          club: shot.club,
+          fix: shot.fix,
+          createdAt: shot.createdAt,
+        }));
+
+        const ids = new Set<string>();
+        for (const shot of shots) {
+          if (typeof shot.id !== 'string' || shot.id.trim() === '' || ids.has(shot.id)) {
+            throw new Error(`Shot ${shot.sequence} has a missing or repeated id`);
+          }
+          ids.add(shot.id);
+          const errors = validateShot(shot, round);
+          if (errors.length > 0) {
+            throw new Error(
+              `Shot ${shot.sequence} is invalid: ${errors.map((e) => e.code).join(', ')}`,
+            );
+          }
+        }
+
+        await database.shots
+          .where('roundId')
+          .equals(roundId)
+          .filter((existing) => existing.holeNumber === holeNumber)
+          .delete();
+        await database.shots.bulkAdd(shots);
+        await database.rounds.update(roundId, { updatedAt: now() });
+        return shots;
+      },
+    );
+  }
+
   return {
     createRound,
     getRound,
@@ -263,6 +374,9 @@ export function createRoundRepository(database: GolfDatabase, now: Clock = isoNo
     getWeather,
     saveWeather,
     listRoundsMissingWeather,
+    getHoleShots,
+    getRoundShots,
+    saveHoleShots,
   };
 }
 
