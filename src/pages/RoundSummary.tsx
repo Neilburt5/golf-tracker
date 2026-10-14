@@ -33,7 +33,7 @@ export function RoundSummary() {
   const [finishFailed, setFinishFailed] = useState(false);
   const [exportMessage, setExportMessage] = useState<ExportMessage | null>(null);
 
-  const { round, holes } = summary;
+  const { round, holes, shots } = summary;
   const { weather, outcome: weatherOutcome } = useRoundWeather(round);
   if (summary.loadState === 'loading') {
     return (
@@ -91,7 +91,7 @@ export function RoundSummary() {
   const handleExport = async () => {
     setExportMessage(null);
     try {
-      const { blob, filename } = createExcelFile(round, holes, weather ?? undefined);
+      const { blob, filename } = createExcelFile(round, holes, weather ?? undefined, shots);
       const outcome = await shareFile(blob, filename);
       if (outcome === 'shared') setExportMessage({ tone: 'ok', text: 'Excel compartido.' });
       if (outcome === 'downloaded') setExportMessage({ tone: 'ok', text: 'Excel descargado.' });

@@ -114,7 +114,7 @@ function RoundRow({ data, onDelete }: RoundRowProps) {
         <section className="warning">
           <strong>¿Eliminar esta ronda?</strong>
           <p className="muted">
-            Se borrarán la ronda de {round.courseName} del {date} y todos sus hoyos
+            Se borrarán la ronda de {round.courseName} del {date} y todos sus hoyos y tiros
             {inProgress ? ' (está en curso)' : ''}. No se puede deshacer. Si dudas, guarda antes
             una copia de seguridad.
           </p>
@@ -138,7 +138,7 @@ function RoundRow({ data, onDelete }: RoundRowProps) {
 }
 
 export function Rounds() {
-  const { loadState, rounds, remove, restore } = useRounds();
+  const { loadState, rounds, clubBag, remove, restore } = useRounds();
   const { lastBackupAt, markBackedUp } = useBackupStatus();
   // Each section shows its own message (before, both sections shared one).
   const [excelMessage, setExcelMessage] = useState<Message | null>(null);
@@ -152,7 +152,7 @@ export function Rounds() {
   // No await before shareFile: iOS only opens the share sheet while the tap is still fresh.
   const handleBackup = async () => {
     const exportedAt = new Date().toISOString();
-    const { blob, filename } = createBackupFile(rounds, exportedAt);
+    const { blob, filename } = createBackupFile(rounds, exportedAt, clubBag);
     const outcome = await shareFile(blob, filename);
     if (outcome === 'shared' || outcome === 'downloaded') {
       // The date is the moment the file was built: edits made later are "not protected".

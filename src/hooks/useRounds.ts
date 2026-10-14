@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { roundRepository } from '../data/roundRepository';
+import { settingsRepository } from '../data/settingsRepository';
+import type { ClubCode } from '../domain/clubs';
 import type { RoundWithHoles } from '../domain/types';
 import {
   parseBackup,
@@ -15,7 +17,9 @@ export type RestoreOutcome =
   | { kind: 'invalid'; code: BackupErrorCode }
   | { kind: 'unreadable' };
 
-type Result = { status: 'ready'; rounds: RoundWithHoles[] } | { status: 'error' };
+type Result =
+  | { status: 'ready'; rounds: RoundWithHoles[]; clubBag: ClubCode[] | undefined }
+  | { status: 'error' };
 
 /** View-model for the rounds list: loading, deleting and restoring backups. */
 export function useRounds() {
@@ -27,7 +31,9 @@ export function useRounds() {
     (async () => {
       try {
         const rounds = await roundRepository.listRoundsWithHoles();
-        if (!cancelled) setResult({ status: 'ready', rounds });
+        // A problem reading the club bag must never hide the rounds.
+        const clubBag = await settingsRepository.getStoredClubBag().catch(() => undefined);
+        if (!cancelled) setResult({ status: 'ready', rounds, clubBag });
       } catch {
         if (!cancelled) setResult({ status: 'error' });
       }
@@ -66,7 +72,7 @@ export function useRounds() {
       const parsed = parseBackup(text);
       if (!parsed.ok) return { kind: 'invalid', code: parsed.code };
 
-      const summary = await restoreBackup(parsed.backup, roundRepository);
+      const summary = await restoreBackup(parsed.backup, roundRepository, settingsRepository);
       reload();
       return { kind: 'done', summary };
     },
@@ -78,6 +84,8 @@ export function useRounds() {
   return {
     loadState,
     rounds: result?.status === 'ready' ? result.rounds : [],
+    /** Club bag saved on this device, or undefined if none. Pass it to createBackupFile. */
+    clubBag: result?.status === 'ready' ? result.clubBag : undefined,
     remove,
     restore,
   };

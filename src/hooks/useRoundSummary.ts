@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { roundRepository } from '../data/roundRepository';
-import type { Hole, Round } from '../domain/types';
+import type { Hole, Round, Shot } from '../domain/types';
 
 export type SummaryLoadState = 'loading' | 'ready' | 'not_found' | 'error';
 
 type Result =
-  | { roundId: string; status: 'ready'; round: Round; holes: Hole[] }
+  | { roundId: string; status: 'ready'; round: Round; holes: Hole[]; shots: Shot[] }
   | { roundId: string; status: 'not_found' | 'error' };
 
 export function useRoundSummary(roundId: string) {
@@ -21,7 +21,9 @@ export function useRoundSummary(roundId: string) {
           return;
         }
         const holes = await roundRepository.getHoles(roundId);
-        if (!cancelled) setResult({ roundId, status: 'ready', round, holes });
+        // A problem reading the shots must never block the summary.
+        const shots = await roundRepository.getRoundShots(roundId).catch((): Shot[] => []);
+        if (!cancelled) setResult({ roundId, status: 'ready', round, holes, shots });
       } catch {
         if (!cancelled) setResult({ roundId, status: 'error' });
       }
@@ -54,6 +56,7 @@ export function useRoundSummary(roundId: string) {
     loadState,
     round: current?.status === 'ready' ? current.round : null,
     holes: current?.status === 'ready' ? current.holes : [],
+    shots: current?.status === 'ready' ? current.shots : [],
     finish,
   };
 }
