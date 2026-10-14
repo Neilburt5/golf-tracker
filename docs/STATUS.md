@@ -240,11 +240,15 @@ Phases 13–20 are outlined only; each block is detailed at the start of its fir
 
 ## Next conversation template
 
-> We are in phase 15 (course geometry: coordinates and "mark point" tool). Phases 0-14 are done and deployed/committed. The V0.3 plan is in PROMPT.md (sections 3, 7, 12, 18, 25), docs/roadmap.md and decisions D31-D35, D39-D43 and D44-D48. I attach contexto-fase15.txt with PROMPT.md, STATUS.md, decisions.md, architecture.md, roadmap.md, package.json, vite.config.ts, the app shell, the course files and the GPS code from phase 13.
+> We are in phase 16 (shot model, club bag, data layer, backup and Excel extension). Phases 0-15 are done and deployed/committed. The V0.4 plan is in PROMPT.md (sections 9, 13, 16, 18, 20), docs/roadmap.md and decisions D32 (with its amendment), D37, D38, D39-D43, D36 and D50-D52. I attach contexto-fase16.txt with PROMPT.md, STATUS.md, decisions.md, architecture.md, database.md, roadmap.md, package.json, the data layer (db, repositories), the domain types, the backup and Excel services, the GPS capture code from phase 13 and the weather tests as a pattern for a new table.
 >
-> Goal (D33): the user captures, standing on the course with the iPhone, the green center and landmarks (dogleg, water) of each hole with an in-app "mark point" tool. The tool outputs the coordinates in a format to paste into `courses.json`. It reuses the bounded GPS capture of phase 13 (D32 amendment, D39-D43): one tap, stops at the first fresh and precise position, accuracy always shown, never continuous tracking.
-> - Before coding: explain the plan, the files, the `courses.json` structure (per-hole green center and landmarks, all optional), and the checklist for the course. Propose how the points are kept while walking the course (so nothing is lost if Safari closes) and how the user gets them out (copy, share). Ask me anything blocking.
-> - Out of scope: storing points in the database, shots and clubs, weather changes, any change to the in-round screens, live distances (phase 18). No new dependencies unless justified. Schema unchanged.
-> - Output of the phase: the tool, the extended `courses.json` validation (`validateCourses`, still accepting courses without geometry), tests, and decisions recorded in `docs/decisions.md`.
+> Goal: the data model for shots and clubs, with no UI (phase 17 does the UI).
+> - A `Shot` table linked to `Hole` (club, GPS fix with latitude, longitude, accuracy and the fix timestamp, plus whether the fix met the age/accuracy criteria), and a club bag setting configured once. Dexie `version(3)` with migration; never edit an existing version.
+> - Reconciliation with `score` (D37): recorded shots plus putts and penalties are compared with `score`; a mismatch is reported but never blocks saving. `score` stays the source of truth.
+> - Shot distance is derived from two consecutive fixes (D32), shown with the uncertainty from both accuracies (D40). Phase 16 must set the limit above which a distance is flagged as approximate.
+> - Backup `schemaVersion` 3 (still accepting versions 1 and 2) and an Excel `SHOTS` sheet, one row per shot, added only when at least one shot exists; ROUND, HOLES and WEATHER unchanged (D38). Tests for all of it, using `fake-indexeddb`.
+> - Before coding: explain the plan, the files, the schema (tables, indexes, how the club bag is stored), the backup and Excel formats, and the validation rules. Ask me anything blocking.
+> - Out of scope: any UI, live distances and wind (phase 18), analytics (phase 19), changes to the in-round screens. No new dependencies unless justified.
+> - Pending from phase 15 (optional, not needed here): front and back of the green, and near/far edges of water (likely D53).
 >
 > UI language is Spanish; code, comments and commits in English. Follow section 23 of the prompt and finish with the STATUS.md block and the commit commands.
