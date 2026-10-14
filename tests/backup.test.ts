@@ -129,9 +129,9 @@ describe('parseBackup: invalid files', () => {
   const invalidCases: Array<[string, (backup: Loose) => void, BackupErrorCode]> = [
     ['a different app name', (b) => { b.app = 'other-app'; }, 'wrong_app'],
     ['a missing app name', (b) => { delete b.app; }, 'wrong_app'],
-    ['a newer schema version', (b) => { b.schemaVersion = 2; }, 'unsupported_version'],
+    ['a newer schema version', (b) => { b.schemaVersion = 4; }, 'unsupported_version'],
     ['schema version 0', (b) => { b.schemaVersion = 0; }, 'invalid_structure'],
-    ['a schema version that is text', (b) => { b.schemaVersion = '1'; }, 'invalid_structure'],
+    ['a schema version that is text', (b) => { b.schemaVersion = '3'; }, 'invalid_structure'],
     ['rounds that is not an array', (b) => { Object.assign(b, { rounds: {} }); }, 'invalid_structure'],
     ['an invalid export date', (b) => { b.exportedAt = 'yesterday'; }, 'invalid_structure'],
     ['a round without course name', (b) => { delete b.rounds[0].round.courseName; }, 'invalid_structure'],

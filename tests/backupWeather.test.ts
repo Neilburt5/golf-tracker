@@ -58,10 +58,10 @@ function makeData(withWeather: boolean): RoundWithHoles {
 
 const exportedAt = '2026-10-02T10:00:00.000Z';
 
-describe('backup with weather (schemaVersion 2)', () => {
+describe('backup with weather', () => {
   it('writes the current schema version', () => {
-    expect(BACKUP_SCHEMA_VERSION).toBe(2);
-    expect(createBackup([makeData(true)], exportedAt).schemaVersion).toBe(2);
+    expect(BACKUP_SCHEMA_VERSION).toBe(3);
+    expect(createBackup([makeData(true)], exportedAt).schemaVersion).toBe(3);
   });
 
   it('round-trips the weather', () => {
@@ -81,7 +81,7 @@ describe('backup with weather (schemaVersion 2)', () => {
 
   it('rejects a newer schema version', () => {
     const file = JSON.parse(serializeBackup(createBackup([makeData(true)], exportedAt)));
-    file.schemaVersion = 3;
+    file.schemaVersion = 4;
     const parsed = parseBackup(JSON.stringify(file));
     expect(parsed.ok).toBe(false);
     if (!parsed.ok) expect(parsed.code).toBe('unsupported_version');
