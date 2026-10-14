@@ -5,7 +5,8 @@ import {
   isPlayed,
   isThreePutt,
 } from '../domain/calculations';
-import type { Hole, Round, RoundWeather, RoundWithHoles } from '../domain/types';
+import { withShotDistances } from '../domain/shots';
+import type { Hole, Round, RoundWeather, RoundWithHoles, Shot } from '../domain/types';
 import { localDateStamp, slugify } from './filenames';
 
 
@@ -95,6 +96,60 @@ export function buildWeatherRow(round: Round, weather: RoundWeather): WeatherRow
   };
 }
 
+/**
+ * SHOTS sheet: one row per recorded shot, joined to ROUND by Round ID and to HOLES by
+ * Round ID + Hole (phase 16). `Club` is the stable code (e.g. "iron7", "wedge56"), not the
+ * Spanish label. Putter rows are position markers: they have no distance.
+ */
+export const SHOT_COLUMNS = [
+  'Round ID',
+  'Date',
+  'Course',
+  'Hole',
+  'Shot',
+  'Club',
+  'Latitude',
+  'Longitude',
+  'Accuracy m',
+  'Fix Time',
+  'Fresh Fix',
+  'Distance m',
+  'Distance Uncertainty m',
+  'Approximate',
+] as const;
+
+export type ShotRow = Record<(typeof SHOT_COLUMNS)[number], ExportCell>;
+
+/** Meters are exported with one decimal; phone GPS does not justify more. */
+function meters(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+/**
+ * The SHOTS rows of one round, ordered by hole and shot number. Every recorded shot is
+ * exported, also on holes without a score: a shot is real data, not an empty row (unlike D18).
+ * Cells that cannot be computed (no fix, last shot, putter marker) are empty.
+ */
+export function buildShotRows(round: Round, shots: readonly Shot[]): ShotRow[] {
+  const date = localDateStamp(round.date);
+  return withShotDistances(shots).map(({ shot, distance }) => ({
+    'Round ID': round.id,
+    Date: date,
+    Course: round.courseName,
+    Hole: shot.holeNumber,
+    Shot: shot.sequence,
+    Club: shot.club,
+    Latitude: shot.fix ? shot.fix.latitude : null,
+    Longitude: shot.fix ? shot.fix.longitude : null,
+    'Accuracy m': shot.fix ? meters(shot.fix.accuracy) : null,
+    'Fix Time': shot.fix ? shot.fix.fixedAt : null,
+    'Fresh Fix': shot.fix ? flag(shot.fix.fresh) : null,
+    'Distance m': distance ? meters(distance.meters) : null,
+    'Distance Uncertainty m': distance ? meters(distance.uncertaintyM) : null,
+    Approximate: distance ? flag(distance.approximate) : null,
+  }));
+}
+
 /** Booleans are exported as 1/0. */
 function flag(value: boolean): 1 | 0 {
   return value ? 1 : 0;
@@ -166,13 +221,15 @@ function toSheetData<K extends string>(
 }
 
 /**
- * Workbook with sheets ROUND and HOLES (and WEATHER only when there is at least one weather row,
- * so files without weather keep exactly the previous shape). Shared by both export modes.
+ * Workbook with sheets ROUND and HOLES, plus WEATHER and SHOTS only when there is at least one
+ * row for them, so files without that data keep exactly the previous shape. Sheet order is
+ * ROUND, HOLES, WEATHER, SHOTS. Shared by both export modes.
  */
 function workbookFromRows(
   roundRows: readonly RoundRow[],
   holeRows: readonly HoleRow[],
   weatherRows: readonly WeatherRow[] = [],
+  shotRows: readonly ShotRow[] = [],
 ): WorkBook {
   const workbook = utils.book_new();
 
@@ -186,19 +243,28 @@ function workbookFromRows(
     const weatherSheet = utils.aoa_to_sheet(toSheetData(WEATHER_COLUMNS, weatherRows));
     utils.book_append_sheet(workbook, weatherSheet, 'WEATHER');
   }
+  if (shotRows.length > 0) {
+    const shotsSheet = utils.aoa_to_sheet(toSheetData(SHOT_COLUMNS, shotRows));
+    utils.book_append_sheet(workbook, shotsSheet, 'SHOTS');
+  }
   return workbook;
 }
 
-/** Workbook for ONE round: ROUND (one row), HOLES (one row per played hole), WEATHER if known. */
+/**
+ * Workbook for ONE round: ROUND (one row), HOLES (one row per played hole), WEATHER if known,
+ * SHOTS if any shot was recorded.
+ */
 export function buildWorkbook(
   round: Round,
   holes: readonly Hole[],
   weather?: RoundWeather,
+  shots: readonly Shot[] = [],
 ): WorkBook {
   return workbookFromRows(
     [buildRoundRow(round, holes)],
     buildHoleRows(round, holes),
     weather ? [buildWeatherRow(round, weather)] : [],
+    buildShotRows(round, shots),
   );
 }
 
@@ -224,7 +290,8 @@ export function selectRoundsForExport(rounds: readonly RoundWithHoles[]): RoundW
 
 /**
  * Workbook for ALL finished rounds: ROUND (one row per round) and HOLES (one row
- * per played hole of those rounds). Reuses the single-round row builders.
+ * per played hole of those rounds), WEATHER and SHOTS when those rounds have any.
+ * Reuses the single-round row builders.
  */
 export function buildAllRoundsWorkbook(rounds: readonly RoundWithHoles[]): WorkBook {
   const selected = selectRoundsForExport(rounds);
@@ -232,6 +299,7 @@ export function buildAllRoundsWorkbook(rounds: readonly RoundWithHoles[]): WorkB
     selected.map(({ round, holes }) => buildRoundRow(round, holes)),
     selected.flatMap(({ round, holes }) => buildHoleRows(round, holes)),
     selected.flatMap(({ round, weather }) => (weather ? [buildWeatherRow(round, weather)] : [])),
+    selected.flatMap(({ round, shots }) => (shots ? buildShotRows(round, shots) : [])),
   );
 }
 
@@ -251,8 +319,9 @@ export function createExcelFile(
   round: Round,
   holes: readonly Hole[],
   weather?: RoundWeather,
+  shots: readonly Shot[] = [],
 ): { blob: Blob; filename: string } {
-  const bytes = workbookToBytes(buildWorkbook(round, holes, weather));
+  const bytes = workbookToBytes(buildWorkbook(round, holes, weather, shots));
   return { blob: new Blob([bytes], { type: XLSX_MIME }), filename: exportFilename(round) };
 }
 

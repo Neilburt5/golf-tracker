@@ -1,17 +1,30 @@
 import type { RoundRepository } from '../data/roundRepository';
+import type { SettingsRepository } from '../data/settingsRepository';
 import { holeNumbersFor } from '../domain/calculations';
-import type { Hole, Round, RoundWeather, RoundWithHoles } from '../domain/types';
+import { isClubCode, parseClubBag, type ClubCode } from '../domain/clubs';
+import { isValidShotFix } from '../domain/shots';
+import type {
+  Hole,
+  Round,
+  RoundWeather,
+  RoundWithHoles,
+  Shot,
+  ShotFix,
+} from '../domain/types';
+import { isValidHoleNumber } from '../domain/validation';
 import { localDateStamp } from './filenames';
 
 export const BACKUP_APP = 'golf-tracker';
 /** Bump when the backup format changes in a way older readers cannot understand. */
-export const BACKUP_SCHEMA_VERSION = 2;
+export const BACKUP_SCHEMA_VERSION = 3;
 export const BACKUP_MIME = 'application/json';
 
 export interface BackupFile {
   app: string;
   schemaVersion: number;
   exportedAt: string; // ISO
+  /** Club bag of the device (schemaVersion 3). Absent in older files or when never configured. */
+  clubBag?: ClubCode[];
   rounds: RoundWithHoles[];
 }
 
@@ -19,13 +32,19 @@ export interface BackupFile {
 // Creating a backup
 // ---------------------------------------------------------------------------
 
-export function createBackup(rounds: readonly RoundWithHoles[], exportedAt: string): BackupFile {
-  return {
+export function createBackup(
+  rounds: readonly RoundWithHoles[],
+  exportedAt: string,
+  clubBag?: readonly ClubCode[],
+): BackupFile {
+  const backup: BackupFile = {
     app: BACKUP_APP,
     schemaVersion: BACKUP_SCHEMA_VERSION,
     exportedAt,
     rounds: [...rounds],
   };
+  if (clubBag && clubBag.length > 0) backup.clubBag = [...clubBag];
+  return backup;
 }
 
 export function serializeBackup(backup: BackupFile): string {
@@ -41,8 +60,9 @@ export function backupFilename(exportedAt: string): string {
 export function createBackupFile(
   rounds: readonly RoundWithHoles[],
   exportedAt: string = new Date().toISOString(),
+  clubBag?: readonly ClubCode[],
 ): { blob: Blob; filename: string } {
-  const backup = createBackup(rounds, exportedAt);
+  const backup = createBackup(rounds, exportedAt, clubBag);
   return {
     blob: new Blob([serializeBackup(backup)], { type: BACKUP_MIME }),
     filename: backupFilename(exportedAt),
@@ -227,6 +247,65 @@ function parseWeather(raw: unknown, roundId: string, path: string): Parsed<Round
   });
 }
 
+function parseShot(raw: unknown, round: Round, path: string): Parsed<Shot> {
+  if (!isObject(raw)) return fail(`${path} must be an object`);
+
+  const { id, holeNumber, sequence, club, fix, createdAt } = raw;
+
+  if (!isNonEmptyString(id)) return fail(`${path}.id is required`);
+  if (raw.roundId !== round.id) return fail(`${path}.roundId does not match its round`);
+  if (typeof holeNumber !== 'number' || !isValidHoleNumber(holeNumber, round)) {
+    return fail(`${path}.holeNumber does not belong to its round`);
+  }
+  if (!isInteger(sequence, 1)) return fail(`${path}.sequence must be an integer >= 1`);
+  if (!isClubCode(club)) return fail(`${path}.club is not a known club`);
+  if (!isDateString(createdAt)) return fail(`${path}.createdAt must be a date`);
+
+  let parsedFix: ShotFix | null = null;
+  if (fix !== null) {
+    if (!isValidShotFix(fix)) return fail(`${path}.fix must be null or a valid position`);
+    // Only known fields are kept.
+    parsedFix = {
+      latitude: fix.latitude,
+      longitude: fix.longitude,
+      accuracy: fix.accuracy,
+      fixedAt: fix.fixedAt,
+      fresh: fix.fresh,
+    };
+  }
+
+  return pass({
+    id,
+    roundId: round.id,
+    holeNumber,
+    sequence,
+    club,
+    fix: parsedFix,
+    createdAt,
+  });
+}
+
+function parseShots(raw: unknown, round: Round, path: string): Parsed<Shot[]> {
+  if (!Array.isArray(raw)) return fail(`${path} must be an array`);
+  const list: unknown[] = raw;
+
+  const shots: Shot[] = [];
+  const positions = new Set<string>();
+  for (let index = 0; index < list.length; index++) {
+    const shot = parseShot(list[index], round, `${path}[${index}]`);
+    if (!shot.ok) return shot;
+    // The database has a unique index on [roundId+holeNumber+sequence]: a repeat would reject the round.
+    const position = `${shot.value.holeNumber}:${shot.value.sequence}`;
+    if (positions.has(position)) {
+      return fail(`${path}[${index}] repeats sequence ${shot.value.sequence} of hole ${shot.value.holeNumber}`);
+    }
+    positions.add(position);
+    shots.push(shot.value);
+  }
+  shots.sort((a, b) => a.holeNumber - b.holeNumber || a.sequence - b.sequence);
+  return pass(shots);
+}
+
 function parseRoundWithHoles(raw: unknown, path: string): Parsed<RoundWithHoles> {
   if (!isObject(raw)) return fail(`${path} must be an object`);
 
@@ -255,14 +334,23 @@ function parseRoundWithHoles(raw: unknown, path: string): Parsed<RoundWithHoles>
     );
   }
 
-    // Weather is optional (absent in schemaVersion 1 files).
-  if (raw.weather === undefined || raw.weather === null) {
-    return pass({ round: round.value, holes });
-  }
-  const weather = parseWeather(raw.weather, round.value.id, `${path}.weather`);
-  if (!weather.ok) return weather;
+  const data: RoundWithHoles = { round: round.value, holes };
 
-  return pass({ round: round.value, holes, weather: weather.value });
+  // Weather is optional (absent in schemaVersion 1 files).
+  if (raw.weather !== undefined && raw.weather !== null) {
+    const weather = parseWeather(raw.weather, round.value.id, `${path}.weather`);
+    if (!weather.ok) return weather;
+    data.weather = weather.value;
+  }
+
+  // Shots are optional (absent in schemaVersion 1 and 2 files). An empty list is the same as none.
+  if (raw.shots !== undefined && raw.shots !== null) {
+    const shots = parseShots(raw.shots, round.value, `${path}.shots`);
+    if (!shots.ok) return shots;
+    if (shots.value.length > 0) data.shots = shots.value;
+  }
+
+  return pass(data);
 }
 
 /** Parses and validates the text of a backup file. Never touches the database. */
@@ -299,6 +387,14 @@ export function parseBackup(text: string): ParseBackupResult {
   const exportedAt = raw.exportedAt;
   if (!isDateString(exportedAt)) return invalid('exportedAt must be a date');
 
+  // The club bag is optional (absent before schemaVersion 3).
+  let clubBag: ClubCode[] | undefined;
+  if (raw.clubBag !== undefined && raw.clubBag !== null) {
+    const parsedBag = parseClubBag(raw.clubBag);
+    if (!parsedBag) return invalid('clubBag must be a non-empty list of known clubs without repeats');
+    clubBag = parsedBag;
+  }
+
   const rawRounds = raw.rounds;
   if (!Array.isArray(rawRounds)) return invalid('rounds must be an array');
   const roundList: unknown[] = rawRounds;
@@ -306,13 +402,14 @@ export function parseBackup(text: string): ParseBackupResult {
   const rounds: RoundWithHoles[] = [];
   const seenRoundIds = new Set<string>();
   const seenHoleIds = new Set<string>();
+  const seenShotIds = new Set<string>();
 
   for (let index = 0; index < roundList.length; index++) {
     const path = `rounds[${index}]`;
     const parsed = parseRoundWithHoles(roundList[index], path);
     if (!parsed.ok) return invalid(parsed.error);
 
-    const { round, holes } = parsed.value;
+    const { round, holes, shots } = parsed.value;
     if (seenRoundIds.has(round.id)) return invalid(`${path}.round.id is duplicated`);
     seenRoundIds.add(round.id);
 
@@ -321,10 +418,16 @@ export function parseBackup(text: string): ParseBackupResult {
       if (seenHoleIds.has(hole.id)) return invalid(`${path} has a hole id used more than once`);
       seenHoleIds.add(hole.id);
     }
+    for (const shot of shots ?? []) {
+      if (seenShotIds.has(shot.id)) return invalid(`${path} has a shot id used more than once`);
+      seenShotIds.add(shot.id);
+    }
     rounds.push(parsed.value);
   }
 
-  return { ok: true, backup: { app: BACKUP_APP, schemaVersion, exportedAt, rounds } };
+  const backup: BackupFile = { app: BACKUP_APP, schemaVersion, exportedAt, rounds };
+  if (clubBag) backup.clubBag = clubBag;
+  return { ok: true, backup };
 }
 
 // ---------------------------------------------------------------------------
@@ -338,15 +441,19 @@ export interface RestoreSummary {
   skipped: number;
   /** Rounds that could not be written (nothing of them was saved). */
   failed: number;
+  /** Set to true only when the file's club bag was applied (the device had none). */
+  clubBagRestored?: boolean;
 }
 
 /**
  * Inserts the rounds of a validated backup. Never overwrites an existing round.
- * One failing round does not stop the others.
+ * One failing round does not stop the others. The club bag of the file is applied only when
+ * the device has no bag of its own (never overwrites, D19) and `settings` is given.
  */
 export async function restoreBackup(
   backup: BackupFile,
   repository: Pick<RoundRepository, 'importRound'>,
+  settings?: Pick<SettingsRepository, 'getStoredClubBag' | 'saveClubBag'>,
 ): Promise<RestoreSummary> {
   const summary: RestoreSummary = { imported: 0, skipped: 0, failed: 0 };
 
@@ -357,6 +464,17 @@ export async function restoreBackup(
       else summary.skipped += 1;
     } catch {
       summary.failed += 1;
+    }
+  }
+
+  if (backup.clubBag && settings) {
+    try {
+      if (!(await settings.getStoredClubBag())) {
+        await settings.saveClubBag(backup.clubBag);
+        summary.clubBagRestored = true;
+      }
+    } catch {
+      // A bag problem never undoes or hides the restored rounds.
     }
   }
 
