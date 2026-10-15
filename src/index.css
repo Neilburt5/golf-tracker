@@ -335,3 +335,52 @@ a.btn-secondary, a.btn-secondary:visited { color: var(--fg); }
 .shot-club { font-size: 1.2rem; }
 .shot-distance { margin-left: auto; font-size: 1.1rem; font-weight: 700; }
 .shot-row .btn { min-height: 48px; font-size: 1rem; }
+
+/* ---- Live info (phase 18) ---- */
+.live-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+}
+.live-main { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.live-distance-col { display: flex; flex-direction: column; }
+.live-target { font-size: 0.95rem; font-weight: 700; color: var(--muted); }
+.live-distance { font-size: 1.9rem; font-weight: 800; line-height: 1.1; }
+.live-status { text-align: right; font-size: 0.9rem; }
+/* Stale or refreshing values stay readable but lose emphasis (solid colour, not opacity). */
+.live-dim .live-distance { color: var(--muted); }
+
+.live-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.live-chip {
+  min-height: 44px;
+  padding: 0 14px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--fg);
+  background: var(--bg);
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.live-chip[aria-pressed='true'] { background: var(--fg); color: #ffffff; border-color: var(--fg); }
+
+.live-refresh {
+  min-height: 48px;
+  padding: 0 16px;
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--fg);
+  background: var(--bg);
+  border: 2px solid var(--fg);
+  border-radius: 12px;
+  cursor: pointer;
+}
+.live-refresh:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.live-wind { display: flex; flex-direction: column; gap: 2px; font-weight: 700; }
+.live-wind .muted { font-weight: 400; }
+.live-note { font-size: 0.8rem; }
