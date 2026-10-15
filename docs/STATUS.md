@@ -3,11 +3,10 @@
 _Paste this file at the start of every new conversation, together with the files relevant to the current phase._
 
 ## Current version
-V0.1 and V0.2 done. V0.3 in progress: GPS field test (13), weather (14) and course geometry (15) done. Next: V0.4 shots and clubs.
+V0.4 in progress: shot data layer (16) and shot capture UI (17) done. Next: live distances and wind (18).
 
 ## Current phase
-**Phase 16 — Shot model, club bag, data layer, backup and Excel extension** (next up)
-
+Phase 18 — Live distances and wind (next up)
 ## Phases
 
 V0.1
@@ -33,11 +32,11 @@ V0.3
 - [x] 15. Course geometry: green centers and landmarks measured on a satellite map
 
 V0.4
-- [ ] 16. Shot model, club bag, data layer, backup and Excel extension
-- [ ] 17. Shot capture UI
+- [x] 16. Shot model, club bag, data layer, backup and Excel extension
+- [x] 17. Shot capture UI 
 
 V0.5
-- [ ] 18. Live distances and wind
+- [ ] 18. Live distances and wind (next up)
 
 V0.7 (first part)
 - [ ] 19. Shot and weather analytics in the dashboard
@@ -65,6 +64,7 @@ Phases 13–20 are outlined only; each block is detailed at the start of its fir
 - GPS: bounded capture window (D32 amendment); every position validated by age and accuracy (D39); high accuracy, +/- shown (D40); rely only on `visibilitychange` (D41); capture works offline (D42); permission asked once on first GPS tap (D43).
 - Weather: fixed window of 5 h / 3 h, aggregated (D44); separate `weather` table, backup v2, WEATHER sheet (D45); optional course `coordinates` (D46); forecast API under 85 days, archive otherwise (D47); Open-Meteo terms and CC BY attribution (D48).
 - Course geometry measured by hand on Google Maps satellite view, no in-app tool (D51, amends D33); format with `green` and `landmarks` of kind dogleg / water / bunker / testero (D50); sanity check of 3 km against the course coordinates (D52).
+- Shot capture: own screen, club saved before the position (D59); best recent position of the window (D60); no bag screen yet (D61); flow starts on shots (D62); suggested score (D63); distance between fixes (D64).
 
 ## Phase 2 results (domain)
 
@@ -211,6 +211,36 @@ Phases 13–20 are outlined only; each block is detailed at the start of its fir
 - Choices: `green` is not a landmark kind (D50); `testero` is the user's own term for a balcony from which the green is played (D50); `distanceMeters` is imported from `domain/gpsLog.ts` (move it to its own file if the GPS test page is ever removed).
 - Pending: front and back of the green, and near/far edges of the river and lake, to be measured later (likely D53). The distances to each point are not used until phase 18.
 
+## Phase 16 results (shot data layer)
+
+- New: `domain/clubs.ts` (catalog, `parseClubBag`), `domain/shots.ts` (`validateShot`, `reconcileHole`, `withShotDistances`, `APPROXIMATE_UNCERTAINTY_M`), `data/settingsRepository.ts`. Changed: `domain/types.ts` (`Shot`, `ShotFix`, `ShotInput`, `ClubBagSetting`, `RoundWithHoles.shots`), `data/db.ts` (Dexie v3: `shots`, `settings`), `data/roundRepository.ts` (`getHoleShots`, `getRoundShots`, `saveHoleShots`; list, delete and import handle shots), `services/backup.ts` (schemaVersion 3, optional `clubBag` and per-round `shots`), `services/excelExport.ts` (`SHOTS` sheet).
+- Wiring (data only, no UI change): `useRounds` returns `clubBag` and passes `settingsRepository` to `restoreBackup`; `Rounds.tsx` passes the bag to `createBackupFile`; `useRoundSummary` returns `shots`; `RoundSummary.tsx` passes them to `createExcelFile`. Export-all already included shots through `listRoundsWithHoles`.
+- 398 Vitest tests passing (35 files). `tsc -b` and `npm run lint` clean. New suites: `shots`, `clubBag`, `shotRepository` (includes the v2 to v3 migration), `backupShots`, `excelShots`. The "newer schema version" cases of `backup.test.ts` and `backupWeather.test.ts` now use 4, since 3 is the current version.
+- No UI, no new dependencies, in-round screens untouched.
+- Choices made: see D54-D58. In short: fixed catalog (the user's own 14 clubs, which is also the default bag), bag in `settings` (putter forced in), the shots of a hole are replaced as a whole (`sequence` comes from the array order), a putter shot is a marker without a stroke or a distance, uncertainty = sum of both accuracies (D40), approximate above 20 m or with a non-fresh fix, every recorded shot is exported (also on holes without score), `saveHoleShots` bumps `Round.updatedAt` (unlike the weather fill).
+- Until phase 17 saves a bag, backups have no `clubBag`; until the first shot is recorded, there is no `SHOTS` sheet. Restoring a backup applies the file's bag only if the device has none; the restore message on `/rounds` does not mention it yet.
+- Real-device checks (tick when done, after the deploy):
+  - [ ] Update with existing rounds: all rounds still there (v2 to v3 migration).
+  - [ ] Backup JSON has `schemaVersion: 3`; restoring a new and an old (v1/v2) backup works.
+  - [ ] Excel of a round and "Exportar todo" have the same sheets as before (no `SHOTS` yet).
+  - [ ] Airplane mode: `/rounds` and the summary open normally.
+
+
+## Phase 17 results (shot capture UI)
+
+- New: `domain/shotEditing.ts`, `domain/shotFormat.ts`, `domain/paths.ts`, `services/shotCapture.ts`, `hooks/useHoleShots.ts`, `hooks/useHoleClubs.ts`, `components/ClubGrid.tsx`, `ShotList.tsx`, `ShotsEntry.tsx`, `pages/ShotCapture.tsx` (route `/round/:roundId/hole/:holeNumber/shots`).
+- Changed: `services/geolocation.ts` (best recent position, `reason`), `domain/resume.ts` (`findResumeTarget`, `resumePath`), `hooks/useActiveRound.ts`, `hooks/useNewRoundForm.ts`, `pages/Home.tsx`, `pages/HoleTracking.tsx` (suggested score, link to shots, "Save & next" opens the next hole's shots), `pages/Rounds.tsx` (`clubBagRestored` in the restore message), `App.tsx`, `index.css`.
+- No schema change (v3), no new dependencies; `useHoleForm` untouched.
+- Choices: see D59-D64. A header area on the shots screen is reserved for phase 18 (distance to the green and wind).
+- Real-device checks (tick when done, after the deploy):
+  - [ ] New round opens the shots screen of the first hole; a club tap adds the shot at once.
+  - [ ] First GPS tap asks for permission once; with permission denied the clubs are still saved and the banner explains how to enable it.
+  - [ ] Distances between shots look plausible on the course; short shots are flagged "aprox.".
+  - [ ] Putter marks the position and goes to the hole screen; the score hint is correct.
+  - [ ] "Save & next" opens the next hole's shots; the last hole opens the summary.
+  - [ ] Lock the screen mid-capture: the club stays, the position is missing, nothing is lost.
+  - [ ] Airplane mode: shots are recorded normally.
+  - [ ] Backup and "Exportar todo" include the shots (`SHOTS` sheet).
 ## Planning results for the V0.1.x / V0.2 block (second phase 0)
 
 - New decisions D23-D38 in `docs/decisions.md`; `PROMPT.md` (sections 1, 2, 3, 6-9, 12, 13, 16-20, 23, 25), `docs/roadmap.md` and `docs/architecture.md` updated.
@@ -237,18 +267,21 @@ Phases 13–20 are outlined only; each block is detailed at the start of its fir
 - (D29) Restore never overwrites: edits to an existing round do not reach another device's copy.
 - `crypto.randomUUID()` needs a secure context (only matters when testing over a LAN IP); optional fallback not implemented.
 - (D39) The last backup date lives in localStorage of this device: after a reinstall or on another device it is empty and the nudge shows again. If localStorage is blocked, the date is not recorded.
+- (D57) A shot played after a penalty drop makes the previous shot's distance meaningless; there is no flag for it yet.
 
 ## Next conversation template
 
-> We are in phase 16 (shot model, club bag, data layer, backup and Excel extension). Phases 0-15 are done and deployed/committed. The V0.4 plan is in PROMPT.md (sections 9, 13, 16, 18, 20), docs/roadmap.md and decisions D32 (with its amendment), D37, D38, D39-D43, D36 and D50-D52. I attach contexto-fase16.txt with PROMPT.md, STATUS.md, decisions.md, architecture.md, database.md, roadmap.md, package.json, the data layer (db, repositories), the domain types, the backup and Excel services, the GPS capture code from phase 13 and the weather tests as a pattern for a new table.
+> We are in phase 17 (shot capture UI). Phases 0-16 are done and deployed/committed. The V0.4 plan is in PROMPT.md (sections 9, 13, 16, 18, 20), docs/roadmap.md and decisions D32 (with its amendment), D36, D37, D39-D43 and D54-D58. I attach contexto-fase17.txt with PROMPT.md, STATUS.md, decisions.md, architecture.md, database.md, roadmap.md, package.json, the data layer (db, roundRepository, settingsRepository), the domain (types, clubs, shots, gpsCapture, gpsLog, validation, calculations), the geolocation service (`startShortCapture`), the hole tracking screen with its hook and components, the GPS test page as the pattern for using the capture window, and index.css.
 >
-> Goal: the data model for shots and clubs, with no UI (phase 17 does the UI).
-> - A `Shot` table linked to `Hole` (club, GPS fix with latitude, longitude, accuracy and the fix timestamp, plus whether the fix met the age/accuracy criteria), and a club bag setting configured once. Dexie `version(3)` with migration; never edit an existing version.
-> - Reconciliation with `score` (D37): recorded shots plus putts and penalties are compared with `score`; a mismatch is reported but never blocks saving. `score` stays the source of truth.
-> - Shot distance is derived from two consecutive fixes (D32), shown with the uncertainty from both accuracies (D40). Phase 16 must set the limit above which a distance is flagged as approximate.
-> - Backup `schemaVersion` 3 (still accepting versions 1 and 2) and an Excel `SHOTS` sheet, one row per shot, added only when at least one shot exists; ROUND, HOLES and WEATHER unchanged (D38). Tests for all of it, using `fake-indexeddb`.
-> - Before coding: explain the plan, the files, the schema (tables, indexes, how the club bag is stored), the backup and Excel formats, and the validation rules. Ask me anything blocking.
-> - Out of scope: any UI, live distances and wind (phase 18), analytics (phase 19), changes to the in-round screens. No new dependencies unless justified.
-> - Pending from phase 15 (optional, not needed here): front and back of the green, and near/far edges of water (likely D53).
+> Goal: shot capture on the hole screen. Optional, never blocking; `score` stays the source of truth (D37).
+> - Club buttons from the club bag. One tap = one shot: store the club and a position from the bounded capture window (`startShortCapture`), with `fresh` true/false per D39. Works without GPS permission and offline (shot saved with `fix: null`).
+> - Choosing the putter saves a position marker (D56) and hands over to the existing hole screen; putts stay with the stepper.
+> - List of the hole's shots with edit and delete (`saveHoleShots` replaces the whole list of the hole). Show the reconciliation with `score` (`reconcileHole`) and the distances with ± uncertainty, flagging approximate ones (`withShotDistances`). A mismatch never blocks "Save & next".
+> - The user's club set is exactly the full catalog, which is also the default bag. Decide in the plan whether a bag configuration screen is needed now or can wait; `saveClubBag` already exists.
+> - Show in the restore message of `/rounds` when the club bag was restored (`clubBagRestored`).
+> - Before coding: explain the plan, the files, the flow of the hole screen (one hand, under 10 s per shot), the states (capturing, no permission, offline, capture failed) and how capture runs without blocking autosave. Ask me anything blocking.
+> - Out of scope: live distances to the green and wind (phase 18), analytics (phase 19). The schema is v3: no schema change unless justified (never edit an existing version).
+> - Known limitation: a penalty drop makes the previous shot's distance meaningless (no flag yet).
+> - Pending from phase 15 (optional): front and back of the green, and near/far edges of water (likely D53).
 >
 > UI language is Spanish; code, comments and commits in English. Follow section 23 of the prompt and finish with the STATUS.md block and the commit commands.

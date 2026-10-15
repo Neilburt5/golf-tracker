@@ -487,3 +487,102 @@ farther than 3000 m from them.
 
 **Reason:** Catches a wrong sign or a mistyped digit when pasting, which would otherwise break
 distances silently in phase 18.
+
+
+---
+
+# Phase 16 — shots and clubs
+
+## D54 — Fixed club catalog: the user's own 14 clubs
+
+**Decision:** Clubs come from a fixed catalog in `domain/clubs.ts`, stored as stable codes: `driver`, `wood3`, `hybrid`, `iron4`-`iron9`, `pw`, `wedge52`, `wedge56`, `wedge64`, `putter`. The Spanish labels are only for the UI ("Driver", "Madera 3", "Híbrido", "Hierro 4"..., "PW", "52º", "56º", "64º", "Putter"). Wedges are named by loft. No custom or free-text clubs.
+
+**Reason:** Analytics (V0.7/V0.8) group by club, so a closed set of codes prevents typos and renames from splitting the data. Excel and JSON hold the code, not the label, so changing a label never changes history.
+
+**Rejected:** Free-text clubs; a club table in the database (the set is fixed and personal). Adding a club later means adding a code to the catalog; old data stays valid.
+
+## D55 — Club bag in a `settings` table; the putter is always in it
+
+**Decision:** Dexie v3 adds a `settings` table (primary key `key`). The club bag is one row `{ key: 'clubBag', value: ClubCode[] }`. Until the user saves a bag, the repository returns every club of the catalog. `parseClubBag` validates (non-empty, known codes, no repeats), returns catalog order and always includes the putter, because the putter is the marker that ends a hole's shots. The bag goes into the JSON backup (`clubBag`, optional). On restore it is applied only if the device has no bag of its own (never overwrites, D19). It is not in the Excel export (not tabular).
+
+**Reason:** A generic key/value table avoids a schema change for every future setting. Having the bag in the backup means a reinstall does not lose it.
+
+**Rejected:** localStorage (as in D49): the last backup date is device metadata with no value for analysis, while the bag is user configuration that belongs in the backup.
+
+## D56 — Shot model
+
+**Decision:** `Shot { id, roundId, holeNumber, sequence, club, fix, createdAt }` with `fix: { latitude, longitude, accuracy, fixedAt, fresh } | null`.
+
+- A shot is linked to its hole by `[roundId+holeNumber]`, the natural key that the `holes` table already treats as unique, not by `Hole.id`.
+- `sequence` is 1-based and assigned by the repository from the array order. `saveHoleShots` replaces all the shots of a hole in one transaction, so deleting or reordering never collides with the unique index `[roundId+holeNumber+sequence]`.
+- `fix` is null when there is no GPS (permission denied or capture failed); the club is still recorded.
+- `fresh` is true when the fix met age <= 3 s and accuracy <= 20 m (D39); false is the best position of the window.
+- A putter shot is a position marker only: it ends the previous shot's distance and is not counted as a stroke. Putts still come from `Hole.putts` (D37).
+- `saveHoleShots` bumps `Round.updatedAt`: shots are user data, unlike the weather fill (D45), so the backup nudge counts them.
+- No limit on the number of shots per hole and no rule tied to the score.
+
+**Reason:** Keeps `score` the source of truth and makes any capture mistake recoverable by replacing the hole's list.
+
+## D57 — Reconciliation with the score and shot distances
+
+**Decision:** (`domain/shots.ts`, pure functions)
+
+- `reconcileHole`: expected strokes = non-putter shots + `putts` + `penaltyStrokes`, compared with `score` (which already includes penalties). Status: `not_tracked` (no shots, not a mismatch), `not_played` (no score), `match`, `missing` (score higher), `extra` (score lower). Informational only: it never blocks saving.
+- The distance of a shot is the haversine distance from its fix to the next shot's fix on the same hole. It is null for the last shot, a putter marker, a missing fix, or across holes.
+- Uncertainty = sum of the two accuracies (D40).
+- A distance is flagged approximate when its uncertainty is above `APPROXIMATE_UNCERTAINTY_M` = 20 m (about 10 m per fix), or when either fix is not `fresh`.
+
+**Reason:** The sum is what D40 validated on three known legs (errors 19, 2 and 8 m against sums of 38, 43 and 28 m). 20 m separates the expected course values (3-4 m per fix, about 8 m in total) from the test site (28-43 m). To be revisited after the second real round (phase 20).
+
+**Limitation:** A shot played after a penalty drop makes the previous shot's distance meaningless; there is no flag for it yet.
+
+## D58 — Backup `schemaVersion` 3 and the Excel SHOTS sheet
+
+**Decision:**
+
+- Backup: `schemaVersion` 3 adds an optional `clubBag` (top level) and optional `shots` per round. Versions 1 and 2 are still accepted; versions above 3 are rejected. Shots are validated field by field, unknown fields are dropped, ids and `[hole, sequence]` must be unique. Shots travel with their round and are never imported into an existing round (D19, D29). An empty `shots` list is the same as none.
+- Excel: a `SHOTS` sheet, one row per shot, added only when at least one shot exists. Sheet order: ROUND, HOLES, WEATHER, SHOTS. Columns: Round ID, Date, Course, Hole, Shot, Club (code), Latitude, Longitude, Accuracy m, Fix Time, Fresh Fix (1/0), Distance m, Distance Uncertainty m, Approximate (1/0). Meters with one decimal. Cells that cannot be computed are empty. Every recorded shot is exported, including on holes without a score (a shot row is data, unlike the empty rows of D18). Export-all keeps D24 (finished rounds only).
+
+**Reason:** D38: data that exists in the app must exist in the backup and the export, with ROUND, HOLES and WEATHER unchanged for existing pipelines.
+
+---
+
+# Phase 17 — shot capture
+
+## D59 — Shots live on their own screen; the club is saved before the position
+
+**Decision:** Shot capture is a separate screen, `/round/:roundId/hole/:holeNumber/shots`; the hole screen only gets a link back to it (`ShotsEntry`). A club tap starts the bounded capture synchronously (D43), saves the shot at once with `fix: null`, and attaches the position when the capture ends. The hook (`useHoleShots`) has its own serial write queue; `useHoleForm` is not touched. Each write stores a snapshot of the list taken when it is queued, so a pending write can never overwrite another hole. Captures are cancelled when the screen is left or the page is hidden (D41); the club stays with `fix: null`, with no automatic retry. A late capture for a deleted shot is ignored. Editing is limited to changing the club and deleting (with inline confirmation); new shots are always appended.
+
+**Reason:** The hole screen is the critical one and its 10 s flow is proven; GPS must never delay or lose a club (D37).
+
+**Rejected:** Shot controls inside the hole screen; waiting for the position before saving the shot; inserting or reordering shots (the mismatch line already reports a forgotten one).
+
+## D60 — The capture window returns the most accurate recent position
+
+**Decision:** At the end of the window, `startShortCapture` returns the most accurate position with age <= 3 s, marked `fresh: false`. If positions arrived but all were stale it fails with `reason: 'only_stale'`; if none arrived, `reason: 'no_position'` (D39: stale and coarse are reported separately). Before, it returned the latest position.
+
+**Reason:** Phase 13 notes: return the best position of the window, not the last one, and never use a stale position.
+
+## D61 — No club bag screen yet
+
+**Decision:** The shots screen reads the bag with `getClubBag()` (default: the full catalog). A configuration screen is deferred until the user changes their bag; `saveClubBag` already exists. When a backup restores a bag, the restore message on `/rounds` says so (`clubBagRestored`).
+
+**Reason:** The user's bag is the full catalog; a screen would be unused code.
+
+## D62 — The round flow starts on the shots screen
+
+**Decision:** New round, "Continue round" and "Save & next" open the shots screen of a hole that has no score. A hole that already has a score opens on the hole screen (progress dots, "Anterior", editing an earlier hole). "Continue round" reopens the shots screen of the first unplayed hole, or the hole screen of the last hole when everything is played (`findResumeTarget`, `resumePath`). The last hole goes to the summary. The shots screen has "Ir al hoyo" at any time, so shots can be skipped.
+
+**Reason:** Matches the on-course flow of section 18: shots, putter, hole data, next hole.
+
+## D63 — Suggested score from the shots
+
+**Decision:** While a hole has no score and at least one non-putter shot is recorded, the first tap on the score stepper starts at shots + putts + penalties instead of par, and the hint says "Sugerido N (según golpes)". It is only a starting value: it never blocks saving and `score` stays the source of truth (D37). The mismatch with the score is shown on the shots screen and on the hole screen.
+
+**Limitation:** If a shot tap was forgotten, the suggestion is low; the mismatch line shows it after the score is saved.
+
+## D64 — Shot distance stays the distance between fixes
+
+**Decision:** The distance of a shot is the haversine distance between its fix and the next one (D57), not the difference of the distances to the green. After the putter marker, the last shot ends at the ball's position on the green. If the putter has no position, phase 18 may fall back to the distance to the green recorded when the shot was played, computed from the shot fix and the green in `courses.json` (no schema change).
+
+**Reason:** A difference of distances to the green only measures progress towards the green, not the length of the shot, and it carries the error of two fixes too.

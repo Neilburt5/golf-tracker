@@ -33,8 +33,8 @@ src/
 ├── pages/         Home, NewRound, HoleTracking, RoundSummary, Rounds, Stats
 ├── components/    Stepper, YesNoToggle, HoleProgress, SVG charts, ...
 ├── hooks/         useHoleForm, useRoundSummary, useRounds, useStats, useBackupStatus, useWeather.ts, useGpsTest.ts, useTapSequence.ts
-├── domain/        types.ts, calculations.ts, validation.ts, resume.ts, format.ts, stats.ts, chartScale.ts, lossRanking.ts, backupNudge.ts, weather.ts, gpsCapture.ts, gpsLog.ts
-├── data/          db.ts, roundRepository.ts, courseRepository.ts, courses.json
+├── domain/        types.ts, calculations.ts, validation.ts, resume.ts, format.ts, stats.ts, chartScale.ts, lossRanking.ts, backupNudge.ts, weather.ts, gpsCapture.ts, gpsLog.ts, clubs.ts, shots.ts
+├── data/          db.ts, roundRepository.ts, settingsRepository.ts, courseRepository.ts, courses.json
 ├── services/      excelExport.ts, shareFile.ts, backup.ts, backupStatus.ts, filenames.ts, storagePersistence.ts, weather.ts, weatherBackfill.ts, geolocation.ts, gpsTestStorage.ts
 └── main.tsx
 ```
@@ -95,6 +95,19 @@ pages/Stats.tsx + SVG chart components
 - Groups with fewer than 5 played holes are flagged "pocos hoyos" and never ranked (`domain/lossRanking.ts`).
 - Backup nudge: `domain/backupNudge.ts` (pure) + `services/backupStatus.ts` (localStorage) + `hooks/useBackupStatus.ts`. It uses all rounds, ignoring the dashboard filter (D39).
 
+## Shots and clubs (V0.4, data layer)
+
+```text
+Hole (1) → (*) Shot      linked by [roundId+holeNumber]
+settings                 { key: 'clubBag', value: ClubCode[] }
+```
+
+- `domain/clubs.ts`: fixed catalog of the user's 14 clubs, `parseClubBag` (D54, D55).
+- `domain/shots.ts` (pure): `validateShot`, `reconcileHole` (shots + putts + penalties against `score`, informational only) and `withShotDistances` (distance to the next fix of the same hole, uncertainty = sum of both accuracies, approximate above 20 m or with a non-fresh fix) (D57).
+- `data/roundRepository.ts`: `saveHoleShots` replaces the shots of one hole in one transaction; list, delete and import handle shots with their round. `data/settingsRepository.ts`: the club bag (D56).
+- Backup `schemaVersion` 3 and the Excel `SHOTS` sheet (D58). Shots stay on the device and in the user's own files; no network is involved.
+- UI (phase 17): `pages/ShotCapture.tsx` + `hooks/useHoleShots.ts` (own write queue, bounded capture per club tap through `services/shotCapture.ts`), `ClubGrid`, `ShotList`; `ShotsEntry` + `useHoleClubs` on the hole screen. The route is `/round/:roundId/hole/:holeNumber/shots`; the round flow is New round → shots → hole → "Save & next" → next hole's shots (D62).
+
 ## Courses
 
 Courses are read from `src/data/courses.json`, bundled into the app so they are always available offline. When a round is created, the course name and the par of each hole are copied into the round (snapshot), so later edits to the JSON never alter past rounds.
@@ -106,7 +119,7 @@ From V0.3 the course data gains coordinates: the course location (for weather) a
 Outline only; each block is detailed at the start of its first phase.
 
 GPS test page (phase 13) and weather (phase 14) are done; see D32 amendment, D39-D43 and D44-D48.
-- **Shots (phases 16–17):** a `shots` table linked to `Hole` (club, GPS fix, accuracy, timestamp) and a club bag setting. Shot distance is derived from consecutive fixes. `Hole.score` remains the source of truth (D37). Shot capture is optional per hole and hands over to the existing hole screen at the putter.
+- **Shots (phase 16 done, UI in phase 17):** a `shots` table linked to `Hole` by `[roundId+holeNumber]` (club code, nullable GPS fix with accuracy, fix time and a `fresh` flag) and a `settings` table with the club bag. Shot distance is derived from consecutive fixes in `domain/shots.ts`. `Hole.score` remains the source of truth: `reconcileHole` only reports (D37, D56, D57). Shot capture is optional per hole and hands over to the existing hole screen at the putter.
 - **Live info (phase 18):** distance to green and landmarks from the stored coordinates, wind with headwind/crosswind relative to the line ball→green, with accuracy and age indicators and an offline fallback.
 - **Persistence:** each new table or field adds a new Dexie `version(n)` with migration. The backup `schemaVersion` is bumped and older files are still accepted. Export gains new sheets (e.g. one row per shot) without changing existing ones (D38).
 - **Privacy:** GPS fixes stay on the device. Weather requests use the course coordinates, never the user's position (D34).
@@ -122,8 +135,7 @@ GPS test page (phase 13) and weather (phase 14) are done; see D32 amendment, D39
 
 ## Excel export
 
-`services/excelExport.ts` builds a workbook with SheetJS: sheet `ROUND` (one row per round) and sheet `HOLES` (one row per played hole). The row-building logic is pure and unit-tested; writing the file and sharing it (`navigator.share`, fallback to download) are thin wrappers. Two modes: one round from its summary, and all finished rounds in one file with a fixed filename from `/rounds` (D24).
-GPS test page (phase 13) and weather (phase 14) are done; see D32 amendment, D39-D43 and D44-D48.
+`services/excelExport.ts` builds a workbook with SheetJS: sheet `ROUND` (one row per round) and sheet `HOLES` (one row per played hole), plus `WEATHER` and `SHOTS` only when there is data for them (D45, D58); sheet order ROUND, HOLES, WEATHER, SHOTS. The row-building logic is pure and unit-tested; writing the file and sharing it (`navigator.share`, fallback to download) are thin wrappers. Two modes: one round from its summary, and all finished rounds in one file with a fixed filename from `/rounds` (D24).
 
 ## Testing
 
