@@ -5,6 +5,7 @@ import { useActiveRound } from '../hooks/useActiveRound';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { useTapSequence } from '../hooks/useTapSequence';
 import { useWeatherBackfill } from '../hooks/useWeather';
+import { resumePath } from '../domain/resume';
 
 export function Home() {
   const active = useActiveRound();
@@ -30,7 +31,12 @@ export function Home() {
       {active.status === 'ready' && active.round && (
         <section className="stack">
           <ActiveRoundCard round={active.round} holeNumber={active.resumeHoleNumber} />
-          <BigLink to={`/round/${active.round.id}/hole/${active.resumeHoleNumber}`}>
+                    <BigLink
+            to={resumePath(active.round.id, {
+              holeNumber: active.resumeHoleNumber,
+              screen: active.resumeScreen,
+            })}
+          >
             Continuar ronda
           </BigLink>
         </section>

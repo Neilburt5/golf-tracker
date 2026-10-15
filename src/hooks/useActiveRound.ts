@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react';
 import { roundRepository } from '../data/roundRepository';
-import { findResumeHoleNumber } from '../domain/resume';
+import { findResumeTarget, type ResumeScreen } from '../domain/resume';
 import type { Round } from '../domain/types';
 
 export type ActiveRoundState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
   | { status: 'ready'; round: null }
-  | { status: 'ready'; round: Round; resumeHoleNumber: number };
+  | { status: 'ready'; round: Round; resumeHoleNumber: number; resumeScreen: ResumeScreen };
 
-/** Looks up the in-progress round and the hole where the user left off. */
+/** Looks up the in-progress round and the hole and screen where the user left off. */
 export function useActiveRound(): ActiveRoundState {
   const [state, setState] = useState<ActiveRoundState>({ status: 'loading' });
 
@@ -24,8 +24,15 @@ export function useActiveRound(): ActiveRoundState {
           return;
         }
         const holes = await roundRepository.getHoles(round.id);
-        const resumeHoleNumber = findResumeHoleNumber(holes) ?? round.startHole;
-        if (!cancelled) setState({ status: 'ready', round, resumeHoleNumber });
+        const target = findResumeTarget(holes) ?? { holeNumber: round.startHole, screen: 'shots' as const };
+        if (!cancelled) {
+          setState({
+            status: 'ready',
+            round,
+            resumeHoleNumber: target.holeNumber,
+            resumeScreen: target.screen,
+          });
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (!cancelled) setState({ status: 'error', message });

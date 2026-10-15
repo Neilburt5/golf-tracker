@@ -32,6 +32,9 @@ function restoreSummaryText(summary: RestoreSummary): string {
   if (summary.failed > 0) {
     parts.push(plural(summary.failed, 'no se pudo importar', 'no se pudieron importar'));
   }
+  if (summary.clubBagRestored) {
+    parts.push('bolsa de palos restaurada');
+  }
   return parts.join(', ') + '.';
 }
 

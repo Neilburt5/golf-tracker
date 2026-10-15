@@ -2,10 +2,14 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { BigButton, BigLink } from '../components/BigButton';
 import { HoleProgress } from '../components/HoleProgress';
+import { ShotsEntry } from '../components/ShotsEntry';
 import { Stepper } from '../components/Stepper';
 import { YesNoToggle } from '../components/YesNoToggle';
 import { holeScoreToPar } from '../domain/calculations';
+import { roundShotsPath, roundSummaryPath } from '../domain/paths';
+import { reconcileHole } from '../domain/shots';
 import type { ValidationError } from '../domain/validation';
+import { useHoleClubs } from '../hooks/useHoleClubs';
 import { useHoleForm, type SaveStatus } from '../hooks/useHoleForm';
 import { formatToPar } from '../domain/format';
 
@@ -29,6 +33,7 @@ export function HoleTracking() {
   const holeNumber = Number(holeParam);
   const navigate = useNavigate();
   const form = useHoleForm(roundId, holeNumber);
+  const clubs = useHoleClubs(roundId, holeNumber);
   const { hole, holes, update } = form;
 
   const [errorState, setErrorState] = useState<{
@@ -100,10 +105,34 @@ export function HoleTracking() {
       setError('No se pudo guardar. Inténtalo de nuevo.');
       return;
     }
-    navigate(next ? holePath(next.holeNumber) : `/round/${roundId}/summary`);
+    // D62: the next hole opens on its shots screen, unless it already has a score
+    // (e.g. after correcting an earlier hole), which opens on the hole screen.
+    if (!next) {
+      navigate(roundSummaryPath(roundId));
+    } else if (next.score === null) {
+      navigate(roundShotsPath(roundId, next.holeNumber));
+    } else {
+      navigate(holePath(next.holeNumber));
+    }
   };
 
   const score = hole.score;
+
+  // D63: suggested score = recorded shots + putts + penalties. Only while the hole has no score
+  // and at least one non-putter shot was recorded. It is a starting value, never a rule (D37).
+  const reconciliation = clubs
+    ? reconcileHole(
+        hole,
+        clubs.map((club) => ({ club })),
+      )
+    : null;
+  const suggestedScore =
+    score === null && reconciliation && reconciliation.recorded > 0
+      ? Math.max(1, reconciliation.expected)
+      : null;
+  const startScore = suggestedScore ?? hole.par;
+  const scoreHint =
+    suggestedScore !== null ? `Sugerido ${suggestedScore} (según golpes)` : formatToPar(holeScoreToPar(hole));
 
   return (
     <div className="screen">
@@ -123,11 +152,11 @@ export function HoleTracking() {
         <Stepper
           label="Score"
           value={score}
-          hint={formatToPar(holeScoreToPar(hole))}
+          hint={scoreHint}
           canDecrement={score === null || score > 1}
-          onIncrement={() => update({ score: score === null ? hole.par : score + 1 })}
+          onIncrement={() => update({ score: score === null ? startScore : score + 1 })}
           onDecrement={() =>
-            update({ score: score === null ? Math.max(1, hole.par - 1) : Math.max(1, score - 1) })
+            update({ score: score === null ? Math.max(1, startScore - 1) : Math.max(1, score - 1) })
           }
         />
         <Stepper
@@ -167,6 +196,8 @@ export function HoleTracking() {
           allowNotApplicable
           onChange={(value) => update({ upAndDown: value })}
         />
+
+        <ShotsEntry roundId={roundId} holeNumber={holeNumber} clubs={clubs} hole={hole} />
       </div>
 
       <div className="actions">

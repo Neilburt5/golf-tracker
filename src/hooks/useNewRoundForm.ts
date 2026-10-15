@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { getCourseById, getCourses } from '../data/courseRepository';
 import { roundRepository } from '../data/roundRepository';
 import type { Course, NumberOfHoles, StartHole } from '../domain/types';
+import { roundShotsPath } from '../domain/paths';
 
 /** full = the whole course, front = holes 1-9, back = holes 10-18. */
 export type HoleRange = 'full' | 'front' | 'back';
@@ -49,7 +50,7 @@ export function useNewRoundForm() {
     try {
       const { numberOfHoles, startHole } = resolveRange(course, range);
       const round = await roundRepository.createRound({ course, tee, numberOfHoles, startHole });
-      navigate(`/round/${round.id}/hole/${startHole}`, { replace: true });
+      navigate(roundShotsPath(round.id, startHole), { replace: true });
     } catch {
       setError('No se pudo crear la ronda. Inténtalo de nuevo.');
       setSubmitting(false);
