@@ -65,7 +65,39 @@ describe('startShortCapture', () => {
     expect(geo.clearWatch).toHaveBeenCalledWith(7)
   })
 
-  it('at the end of the window returns the latest position marked as not fresh', async () => {
+  it('at the end of the window returns the most accurate recent position, not fresh', async () => {
+    const geo = installFakeGeolocation()
+    const capture = startShortCapture(options, () => {})
+
+    geo.emit(1_000, 40, 40.61)
+    geo.emit(1_500, 25, 40.62) // the most accurate recent one
+    geo.emit(500, 30, 40.63) // the latest, but less accurate
+    await vi.advanceTimersByTimeAsync(options.timeoutMs)
+    const result = await capture.result
+
+    expect(result).toMatchObject({
+      ok: true,
+      fresh: false,
+      accuracy: 25,
+      latitude: 40.62,
+      updates: 3,
+    })
+    expect(geo.clearWatch).toHaveBeenCalledWith(7)
+  })
+
+  it('never picks a stale position as the best one', async () => {
+    const geo = installFakeGeolocation()
+    const capture = startShortCapture(options, () => {})
+
+    geo.emit(30_000, 3, 40.61) // very accurate but stale
+    geo.emit(1_000, 50, 40.62) // recent, coarse
+    await vi.advanceTimersByTimeAsync(options.timeoutMs)
+    const result = await capture.result
+
+    expect(result).toMatchObject({ ok: true, fresh: false, accuracy: 50, latitude: 40.62 })
+  })
+
+  it('fails with only_stale when every position was stale', async () => {
     const geo = installFakeGeolocation()
     const capture = startShortCapture(options, () => {})
 
@@ -74,18 +106,18 @@ describe('startShortCapture', () => {
     await vi.advanceTimersByTimeAsync(options.timeoutMs)
     const result = await capture.result
 
-    expect(result).toMatchObject({ ok: true, fresh: false, latitude: 40.62, updates: 2 })
+    expect(result).toMatchObject({ ok: false, code: 3, reason: 'only_stale', updates: 2 })
     expect(geo.clearWatch).toHaveBeenCalledWith(7)
   })
 
-  it('reports an error when nothing arrives in the window', async () => {
+  it('fails with no_position when nothing arrives in the window', async () => {
     const geo = installFakeGeolocation()
     const capture = startShortCapture(options, () => {})
 
     await vi.advanceTimersByTimeAsync(options.timeoutMs)
     const result = await capture.result
 
-    expect(result).toMatchObject({ ok: false, code: 3, updates: 0 })
+    expect(result).toMatchObject({ ok: false, code: 3, reason: 'no_position', updates: 0 })
     expect(geo.clearWatch).toHaveBeenCalledTimes(1)
   })
 

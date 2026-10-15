@@ -78,6 +78,13 @@ export interface CaptureUpdate {
   timestamp: number
 }
 
+/**
+ * Why a window ended without a usable position (only set when it ran out of time):
+ * - no_position: nothing arrived at all.
+ * - only_stale: positions arrived, but all older than the age limit (D39).
+ */
+export type CaptureFailureReason = 'no_position' | 'only_stale'
+
 export type ShortCaptureResult =
   | {
       ok: true
@@ -89,7 +96,7 @@ export type ShortCaptureResult =
       fresh: boolean
       updates: number
     }
-  | { ok: false; code: number; message: string; updates: number }
+  | { ok: false; code: number; message: string; updates: number; reason?: CaptureFailureReason }
 
 export interface ShortCapture {
   result: Promise<ShortCaptureResult>
@@ -102,6 +109,9 @@ export interface ShortCapture {
  * enough, or until the window ends, and ALWAYS clears the watch before the
  * result is delivered. Every position received is reported to `onUpdate`, so
  * the log shows whether iOS keeps delivering new positions or stays frozen.
+ * At the end of the window it returns the MOST ACCURATE position that was not
+ * stale (age <= maxAgeMs), marked `fresh: false`; if every position was stale
+ * it fails with `reason: 'only_stale'` (D39).
  * Call it synchronously from a tap handler (keeps the user gesture).
  */
 export function startShortCapture(
@@ -112,7 +122,7 @@ export function startShortCapture(
   let timer: ReturnType<typeof setTimeout> | null = null
   let finish: (result: ShortCaptureResult) => void = () => {}
   let updates = 0
-  let latest: CaptureUpdate | null = null
+  let best: CaptureUpdate | null = null
 
   const result = new Promise<ShortCaptureResult>((resolve) => {
     let done = false
@@ -144,7 +154,9 @@ export function startShortCapture(
           accuracy: position.coords.accuracy,
           timestamp: position.timestamp,
         }
-        latest = update
+        if (update.ageMs <= options.maxAgeMs && (best === null || update.accuracy < best.accuracy)) {
+          best = update
+        }
         onUpdate(update)
         if (isAcceptableFix(update.ageMs, update.accuracy, options)) {
           finish({
@@ -166,18 +178,32 @@ export function startShortCapture(
     )
 
     timer = setTimeout(() => {
-      if (latest) {
+      if (best) {
         finish({
           ok: true,
-          latitude: latest.latitude,
-          longitude: latest.longitude,
-          accuracy: latest.accuracy,
-          timestamp: latest.timestamp,
+          latitude: best.latitude,
+          longitude: best.longitude,
+          accuracy: best.accuracy,
+          timestamp: best.timestamp,
           fresh: false,
           updates,
         })
+      } else if (updates > 0) {
+        finish({
+          ok: false,
+          code: 3,
+          message: 'Only stale positions in the window',
+          updates,
+          reason: 'only_stale',
+        })
       } else {
-        finish({ ok: false, code: 3, message: 'No position received in the window', updates })
+        finish({
+          ok: false,
+          code: 3,
+          message: 'No position received in the window',
+          updates,
+          reason: 'no_position',
+        })
       }
     }, options.timeoutMs)
   })
