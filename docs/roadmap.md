@@ -2,7 +2,7 @@
 
 ## Current version
 
-**V0.1 and V0.2 — done and deployed.** In progress: **V0.3** (environment and course data).
+**V0.1, V0.2, V0.3, V0.4 and V0.5 — done and deployed.** Next: **V0.7 (first part)**, shot and weather analytics (phase 19).
 
 ## Versions
 
@@ -11,9 +11,9 @@
 | V0.1 | Basic round tracker: play a full round, review, save locally, export to Excel, JSON backup | Done |
 | V0.1.x | Export all rounds to one Excel file | Done |
 | V0.2 | History and dashboard (in-app statistics) | Done |
-| V0.3 | Environment and course data: GPS field test, weather per round, course geometry |In progress |
-| V0.4 | Shots and clubs: club per shot, GPS point per shot | Planned |
-| V0.5 | Live on-course info: distance to green and landmarks, wind | Planned |
+| V0.3 | Environment and course data: GPS field test, weather per round, course geometry | Done |
+| V0.4 | Shots and clubs: club per shot, GPS point per shot | Done |
+| V0.5 | Live on-course info: distance to green and landmarks, wind | Done |
 | V0.6 | Strokes Gained (needs a documented reference methodology) | Planned |
 | V0.7 | Advanced performance analytics (first part: shot and weather analytics in phase 19) | Planned |
 | V0.8 | Advanced club analytics | Planned |
@@ -44,7 +44,7 @@ The roadmap was re-cut after V0.1 (D31). The originally separate shot-by-shot (V
 | 15 | Course geometry | Green centers and landmarks per hole; in-app "mark point" tool that outputs coordinates for `courses.json` | Done |
 | 16 | Shot data layer | `Shot` table, club bag settings, validation and reconciliation with score, backup and Excel (SHOTS sheet) extension; tests, no UI | Done |
 | 17 | Shot capture UI | Choose club, store GPS point, putter hands over to the hole screen; edit/delete shots; works without GPS permission | Done |
-| 18 | Live distances and wind | Distance to green and landmarks, headwind/crosswind, accuracy and age indicators, offline fallback | Next |
+| 18 | Live distances and wind | Distance to green and landmarks, headwind/crosswind, accuracy and age indicators, offline fallback | Done |
 | 19 | Shot and weather analytics | Average distance per club, left/right relative to the line to the green, weather effects with visible sample sizes | Pending |
 | 20 | Second real-round test and polish | Field checklist, findings turned into fixes | Pending |
 

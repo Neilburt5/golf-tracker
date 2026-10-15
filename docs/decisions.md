@@ -586,3 +586,48 @@ distances silently in phase 18.
 **Decision:** The distance of a shot is the haversine distance between its fix and the next one (D57), not the difference of the distances to the green. After the putter marker, the last shot ends at the ball's position on the green. If the putter has no position, phase 18 may fall back to the distance to the green recorded when the shot was played, computed from the shot fix and the green in `courses.json` (no schema change).
 
 **Reason:** A difference of distances to the green only measures progress towards the green, not the length of the shot, and it carries the error of two fixes too.
+
+---
+
+# Phase 18 — live distances and wind
+
+## D65 — One GPS capture at a time: a club tap always wins
+
+**Decision:** `services/captureCoordinator.ts` decides who may use the GPS. Two kinds of capture exist: shot (started by a club tap) and live (started by the info panel). A club tap cancels the running live capture and starts its own in the same call; a live capture is refused while any shot capture runs and while another live capture runs. A cancelled live capture ends as `interrupted`, which the panel treats as silent. The coordinator opens no capture by itself (`start` is injected), so it is tested with fakes. Its state is a stable object with `subscribe` / `getState`, used through `useSyncExternalStore`.
+
+**Reason:** D32 allows only bounded windows, never competing ones. A shot needs a fresh position (age <= 3 s, D39), so an older live position could not be reused for it anyway. Keeping the decision in one pure-ish module avoids two hooks racing for the watch.
+
+**Rejected:** Letting the live capture finish before the shot starts (delays the club tap, breaks the 10 s flow); sharing one capture between both (the shot would get a position older than the tap).
+
+## D66 — When the live position is measured, and how it is shown
+
+**Decision:** The live panel takes a bounded capture (the same window as shots: at most 15 s, age <= 3 s, accuracy <= 20 m) only: when the screen opens and the permission is already `granted`; when the page becomes visible again (D41); on a tap on "Actualizar" / "Medir distancia". With the permission still `prompt` nothing starts by itself, so the first iOS prompt comes from a tap (D43). The position shown is the newest of the panel's own capture and the last shot fix of the hole (`newestFix`), so a club tap refreshes the distances at no extra battery cost. The age is shown ("hace 12 s", redrawn every 5 s by `useNow`) and from 60 s on the value is dimmed with "Actualiza". Not fresh positions are marked "aprox." (same rule as D57).
+
+**Reason:** No continuous tracking (D32 amendment): a few seconds of GPS per event and nothing in between. The age is always visible because a stale distance that looks current is worse than none.
+
+## D67 — Hole targets from `courses.json`; derived distances are never stored
+
+**Decision:** Targets of a hole are its green first and then its landmarks in file order, with Spanish labels ("Green", "Dogleg 1", "Agua (río)", "Bunker derecha", "Testero"); two landmarks with the same label get a number. The default target is the green; the selection resets on each hole. A distance is the haversine distance from the position to the target, with the accuracy of the fix as uncertainty (the satellite measurement of the target adds a few meters, D51). A hole without geometry shows no distances. The distance to the green at the moment of each shot (`distanceToGreenAtShot`) is derived from the shot fix and `courses.json` when needed and is never stored: no schema change.
+
+**Reason:** `courses.json` is the single source of truth for geometry (D50, D51). Deriving keeps the data model and the backup untouched.
+
+**Limitation:** Correcting a green in `courses.json` changes the derived distances of old shots. If that matters, freezing them needs a schema v4 (phase 19 decides).
+
+## D68 — Live wind: Open-Meteo `current`, localStorage cache, signed components
+
+**Decision:**
+- Request: the Open-Meteo forecast API with `current=wind_speed_10m,wind_direction_10m,wind_gusts_10m`, `wind_speed_unit=kmh`, `timeformat=unixtime`. Only the course coordinates are sent (D34). Strict parsing of the untrusted response, 10 s timeout, errors as `WeatherServiceError`.
+- Cache: the last wind per course in localStorage (`golf-tracker:last-wind:<courseId>`), validated on read, never throwing. It is device metadata (like D49) and stays out of the backup and the Excel export. A cached value fetched less than 10 minutes ago is reused (the source updates about every 15 minutes); a value is shown for at most 3 hours after its observation time, with that time. Failures are silent: the last value stays, flagged "sin actualizar". No network when offline.
+- Fetch triggers: screen open, page visible again, and the "Actualizar" tap (which forces it).
+- Components relative to the line position -> green, with `delta = windFrom - heading`: headwind = speed·cos(delta) (positive against the player), crosswind = speed·sin(delta) (positive = wind coming from the player's right). Without a position or green only speed and compass direction are shown; below 1 km/h it says calm.
+- The panel always shows "valor de cuadrícula a 10 m, no el viento de tu posición" and the Open-Meteo CC BY 4.0 credit (D48).
+
+**Reason:** Same service, terms and privacy as the round weather (D34, D47, D48). Showing the time and the grid caveat keeps an orientation from being read as a measurement.
+
+**Rejected:** Persisting wind in Dexie (not golf data, would need backup and export changes); fetching on a timer (battery, rate limits).
+
+## D69 — Fallback for a putter marker without position: deferred
+
+**Decision:** D64's fallback (use the distance to the green recorded when the shot was played as the length of the previous shot when the putter has no position) is not built. What is built is only the derived "Al green: N m ± X" line on each shot with a position, which is also the raw input for the approach-distance bands of phase 19.
+
+**Reason:** D64 itself says a difference of distances to the green is not the length of a shot, and a putter marker usually gets a position. It can wait until a real round shows it is needed.

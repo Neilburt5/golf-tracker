@@ -29,14 +29,11 @@ The domain layer is the long-term asset: the round summary, Excel export, histor
 ## Folder structure
 
 ```text
-src/
-├── pages/         Home, NewRound, HoleTracking, RoundSummary, Rounds, Stats
-├── components/    Stepper, YesNoToggle, HoleProgress, SVG charts, ...
-├── hooks/         useHoleForm, useRoundSummary, useRounds, useStats, useBackupStatus, useWeather.ts, useGpsTest.ts, useTapSequence.ts
-├── domain/        types.ts, calculations.ts, validation.ts, resume.ts, format.ts, stats.ts, chartScale.ts, lossRanking.ts, backupNudge.ts, weather.ts, gpsCapture.ts, gpsLog.ts, clubs.ts, shots.ts
+├── components/    Stepper, YesNoToggle, HoleProgress, SVG charts, ClubGrid, ShotList, ShotsEntry, LiveInfoPanel, ...
+├── hooks/         useHoleForm, useRoundSummary, useRounds, useStats, useBackupStatus, useWeather, useGpsTest, useTapSequence, useHoleShots, useHoleClubs, useNow, useLivePosition, useCurrentWind
+├── domain/        types, calculations, validation, resume, format, stats, chartScale, lossRanking, backupNudge, weather, gpsCapture, gpsLog, clubs, shots, shotFormat, shotEditing, paths, geo, holeTargets, liveWind
 ├── data/          db.ts, roundRepository.ts, settingsRepository.ts, courseRepository.ts, courses.json
-├── services/      excelExport.ts, shareFile.ts, backup.ts, backupStatus.ts, filenames.ts, storagePersistence.ts, weather.ts, weatherBackfill.ts, geolocation.ts, gpsTestStorage.ts
-└── main.tsx
+├── services/      excelExport, shareFile, backup, backupStatus, filenames, storagePersistence, weather, weatherBackfill, geolocation, shotCapture, captureCoordinator, currentWind, windCache, gpsTestStorage
 ```
 
 ## Navigation
@@ -108,6 +105,25 @@ settings                 { key: 'clubBag', value: ClubCode[] }
 - Backup `schemaVersion` 3 and the Excel `SHOTS` sheet (D58). Shots stay on the device and in the user's own files; no network is involved.
 - UI (phase 17): `pages/ShotCapture.tsx` + `hooks/useHoleShots.ts` (own write queue, bounded capture per club tap through `services/shotCapture.ts`), `ClubGrid`, `ShotList`; `ShotsEntry` + `useHoleClubs` on the hole screen. The route is `/round/:roundId/hole/:holeNumber/shots`; the round flow is New round → shots → hole → "Save & next" → next hole's shots (D62).
 
+## Live info (V0.5, phase 18)
+
+```text
+courses.json (green, landmarks)     Open-Meteo `current` (course coordinates only)
+          ↓                                   ↓
+domain/holeTargets.ts               services/currentWind.ts → services/windCache.ts (localStorage)
+          ↓                                   ↓
+hooks/useLivePosition.ts            hooks/useCurrentWind.ts      hooks/useNow.ts (5 s clock)
+          ↓                                   ↓
+          components/LiveInfoPanel.tsx (top of the shots screen)
+```
+
+- Informational only: the panel never blocks a club tap and renders nothing when the hole has no geometry and no wind is known (D37).
+- GPS arbitration lives in `services/captureCoordinator.ts` (D65): a club tap (`startShot`) cancels the live capture; a live capture (`startLive`) is refused while a shot capture runs. `useHoleShots` starts its captures through it; the panel only reads its state.
+- Live capture triggers: screen open (permission already `granted`), page visible again, "Actualizar" (D66). No continuous tracking.
+- Pure rules: `domain/geo.ts` (bearing), `domain/holeTargets.ts` (targets, distances, position age, `distanceToGreenAtShot` derived and never stored, D67), `domain/liveWind.ts` (cache validation, staleness, headwind/crosswind, text, D68).
+- The wind cache is device metadata in localStorage: not in the backup, not in the Excel export. No schema change (v3).
+- Shots list shows "Al green: N m ± X" per shot, derived from the shot fix and `courses.json`.
+
 ## Courses
 
 Courses are read from `src/data/courses.json`, bundled into the app so they are always available offline. When a round is created, the course name and the par of each hole are copied into the round (snapshot), so later edits to the JSON never alter past rounds.
@@ -120,7 +136,7 @@ Outline only; each block is detailed at the start of its first phase.
 
 GPS test page (phase 13) and weather (phase 14) are done; see D32 amendment, D39-D43 and D44-D48.
 - **Shots (phase 16 done, UI in phase 17):** a `shots` table linked to `Hole` by `[roundId+holeNumber]` (club code, nullable GPS fix with accuracy, fix time and a `fresh` flag) and a `settings` table with the club bag. Shot distance is derived from consecutive fixes in `domain/shots.ts`. `Hole.score` remains the source of truth: `reconcileHole` only reports (D37, D56, D57). Shot capture is optional per hole and hands over to the existing hole screen at the putter.
-- **Live info (phase 18):** distance to green and landmarks from the stored coordinates, wind with headwind/crosswind relative to the line ball→green, with accuracy and age indicators and an offline fallback.
+- **Live info (phase 18, done):** see the section above and D65-D69.
 - **Persistence:** each new table or field adds a new Dexie `version(n)` with migration. The backup `schemaVersion` is bumped and older files are still accepted. Export gains new sheets (e.g. one row per shot) without changing existing ones (D38).
 - **Privacy:** GPS fixes stay on the device. Weather requests use the course coordinates, never the user's position (D34).
 - **Not planned:** elevation/slope (D35).
@@ -154,3 +170,5 @@ Vitest for domain calculations, statistics, validation, repositories (with `fake
 9. Statistics from few rounds are not conclusive; sample sizes are always shown.
 10. The last backup date lives in localStorage (D39): it is lost on reinstall and `shared` does not prove the file reached Files.
 11. Weather from a grid cell, filled only when the app is opened; Open-Meteo availability is not guaranteed (D48)
+12. Live distances depend on a fresh position; the panel always shows the age and accuracy and never presents a stale value as current (D66). A club tap cancels the live capture (D65).
+13. The live wind is a 10 m grid value cached in localStorage, shown for at most 3 h with its time (D68).

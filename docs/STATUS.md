@@ -3,10 +3,10 @@
 _Paste this file at the start of every new conversation, together with the files relevant to the current phase._
 
 ## Current version
-V0.4 in progress: shot data layer (16) and shot capture UI (17) done. Next: live distances and wind (18).
+V0.5 done (live distances and wind, phase 18). Next: shot and weather analytics in the dashboard (phase 19).
 
 ## Current phase
-Phase 18 — Live distances and wind (next up)
+Phase 19 — Shot and weather analytics in the dashboard (next up)
 ## Phases
 
 V0.1
@@ -36,10 +36,9 @@ V0.4
 - [x] 17. Shot capture UI 
 
 V0.5
-- [ ] 18. Live distances and wind (next up)
-
+- [x] 18. Live distances and wind 
 V0.7 (first part)
-- [ ] 19. Shot and weather analytics in the dashboard
+- [ ] 19. Shot and weather analytics in the dashboard (next up)
 
 - [ ] 20. Second real-round test and polish
 
@@ -65,6 +64,7 @@ Phases 13–20 are outlined only; each block is detailed at the start of its fir
 - Weather: fixed window of 5 h / 3 h, aggregated (D44); separate `weather` table, backup v2, WEATHER sheet (D45); optional course `coordinates` (D46); forecast API under 85 days, archive otherwise (D47); Open-Meteo terms and CC BY attribution (D48).
 - Course geometry measured by hand on Google Maps satellite view, no in-app tool (D51, amends D33); format with `green` and `landmarks` of kind dogleg / water / bunker / testero (D50); sanity check of 3 km against the course coordinates (D52).
 - Shot capture: own screen, club saved before the position (D59); best recent position of the window (D60); no bag screen yet (D61); flow starts on shots (D62); suggested score (D63); distance between fixes (D64).
+- Live info (phase 18): one GPS capture at a time, a club tap always wins (D65); live capture only on open (permission already granted), on page visible and on "Actualizar", position age shown, stale at 60 s (D66); targets from `courses.json`, distance derived and never stored (D67); current wind from Open-Meteo, localStorage cache, 10 min reuse, 3 h cutoff, signed components (D68); putter-position fallback deferred (D69).
 
 ## Phase 2 results (domain)
 
@@ -233,14 +233,36 @@ Phases 13–20 are outlined only; each block is detailed at the start of its fir
 - No schema change (v3), no new dependencies; `useHoleForm` untouched.
 - Choices: see D59-D64. A header area on the shots screen is reserved for phase 18 (distance to the green and wind).
 - Real-device checks (tick when done, after the deploy):
-  - [ ] New round opens the shots screen of the first hole; a club tap adds the shot at once.
-  - [ ] First GPS tap asks for permission once; with permission denied the clubs are still saved and the banner explains how to enable it.
-  - [ ] Distances between shots look plausible on the course; short shots are flagged "aprox.".
-  - [ ] Putter marks the position and goes to the hole screen; the score hint is correct.
-  - [ ] "Save & next" opens the next hole's shots; the last hole opens the summary.
-  - [ ] Lock the screen mid-capture: the club stays, the position is missing, nothing is lost.
-  - [ ] Airplane mode: shots are recorded normally.
-  - [ ] Backup and "Exportar todo" include the shots (`SHOTS` sheet).
+  - [x] New round opens the shots screen of the first hole; a club tap adds the shot at once.
+  - [x] First GPS tap asks for permission once; with permission denied the clubs are still saved and the banner explains how to enable it.
+  - [x] Distances between shots look plausible on the course; short shots are flagged "aprox.".
+  - [x] Putter marks the position and goes to the hole screen; the score hint is correct.
+  - [x] "Save & next" opens the next hole's shots; the last hole opens the summary.
+  - [x] Lock the screen mid-capture: the club stays, the position is missing, nothing is lost.
+  - [x] Airplane mode: shots are recorded normally.
+  - [x] Backup and "Exportar todo" include the shots (`SHOTS` sheet).
+
+## Phase 18 results (live distances and wind)
+
+- New domain: `domain/geo.ts` (`bearingDegrees`, `normalizeDegrees`), `domain/holeTargets.ts` (targets, labels, distance to target, `distanceToGreenAtShot`, position age, `newestFix`), `domain/liveWind.ts` (`LiveWind`, cache validation, staleness, `windComponents`, text).
+- New services: `services/currentWind.ts` (Open-Meteo `current`, strict parse, 10 s timeout, same `WeatherServiceError` as the round weather), `services/windCache.ts` (localStorage per course, never throws), `services/captureCoordinator.ts` (who may use the GPS; injectable `start`; `useSyncExternalStore`-ready state).
+- New hooks and UI: `hooks/useNow.ts`, `hooks/useLivePosition.ts`, `hooks/useCurrentWind.ts`, `components/LiveInfoPanel.tsx`.
+- Changed: `hooks/useHoleShots.ts` (club tap goes through `captureCoordinator.startShot()`, exposes `lastFix`), `pages/ShotCapture.tsx` (panel in the slot reserved in phase 17), `components/ShotList.tsx` ("Al green: N m ± X" per shot, derived), `index.css`.
+- No schema change (v3), no new dependencies, backup and Excel untouched, `useHoleForm` and the hole screen untouched.
+- 521 Vitest tests passing (45 files; 96 new in `geo`, `holeTargets`, `liveWind`, `currentWind`, `windCache`, `captureCoordinator`). `tsc -b` and `npm run lint` clean. No UI tests.
+- Choices: see D65-D69. In short: a club tap cancels the live capture (the shot needs its own fresh fix) and a cancelled live capture ends silently; the panel shows the newest of its own capture and the last shot fix, so a club tap refreshes the distances for free; auto-capture only if the permission is already `granted` (first use needs a tap, D43); wind is shown for up to 3 h with its time and "sin actualizar" when the last attempt failed; headwind positive = against, crosswind positive = from the right.
+- Lint note: React 19's `react-hooks/set-state-in-effect` rejects calling an async function that sets state from an effect body, so the first load of `useCurrentWind` and `useLivePosition` starts from a `setTimeout(…, 0)` callback (cleared in the cleanup).
+- Real-device checks (tick when done, after the deploy):
+  - [ ] Shots screen on a hole with geometry shows the panel; hole 2 / 9 (green only) without chips, hole 6 / 7 with chips.
+  - [ ] First use (permission still `prompt`): "Medir distancia" asks for permission once; afterwards the screen measures on open by itself.
+  - [ ] Distance to the green on the course matches a known distance (rangefinder or a yardage marker) within the shown ±.
+  - [ ] Tapping a club while the panel is measuring: the club is saved, the shot gets its position, nothing freezes; "Actualizar" is disabled meanwhile.
+  - [ ] Lock the screen and come back: the position is re-measured, no stale value shown as current.
+  - [ ] Wind: line with time and Open-Meteo credit; components look plausible against what you feel on the tee.
+  - [ ] Airplane mode: last wind still shown with its time (up to 3 h), distances still work, clubs still saved.
+  - [ ] "Al green" line appears on shots with a position; none on the putter marker.
+  - [ ] Battery: a full round with the screen on does not drain noticeably more than in phase 17.
+
 ## Planning results for the V0.1.x / V0.2 block (second phase 0)
 
 - New decisions D23-D38 in `docs/decisions.md`; `PROMPT.md` (sections 1, 2, 3, 6-9, 12, 13, 16-20, 23, 25), `docs/roadmap.md` and `docs/architecture.md` updated.
@@ -268,20 +290,19 @@ Phases 13–20 are outlined only; each block is detailed at the start of its fir
 - `crypto.randomUUID()` needs a secure context (only matters when testing over a LAN IP); optional fallback not implemented.
 - (D39) The last backup date lives in localStorage of this device: after a reinstall or on another device it is empty and the nudge shows again. If localStorage is blocked, the date is not recorded.
 - (D57) A shot played after a penalty drop makes the previous shot's distance meaningless; there is no flag for it yet.
+- (D67, D69) The distance to the green at each shot is derived from the shot fix and the green in `courses.json`: correcting a green later changes old derived distances. Freezing them would need a schema v4.
+- (D68) The wind is a 10 m grid value of the course, refreshed at most every 10 minutes; its time is always shown. The last known value is hidden after 3 h and lives in localStorage (lost on reinstall).
+- (D66) The live panel only measures automatically when the location permission is already `granted`; on a fresh install the first measurement needs a tap.
 
 ## Next conversation template
 
-> We are in phase 17 (shot capture UI). Phases 0-16 are done and deployed/committed. The V0.4 plan is in PROMPT.md (sections 9, 13, 16, 18, 20), docs/roadmap.md and decisions D32 (with its amendment), D36, D37, D39-D43 and D54-D58. I attach contexto-fase17.txt with PROMPT.md, STATUS.md, decisions.md, architecture.md, database.md, roadmap.md, package.json, the data layer (db, roundRepository, settingsRepository), the domain (types, clubs, shots, gpsCapture, gpsLog, validation, calculations), the geolocation service (`startShortCapture`), the hole tracking screen with its hook and components, the GPS test page as the pattern for using the capture window, and index.css.
+> We are in phase 19 (shot and weather analytics in the dashboard). Phases 0-18 are done and deployed/committed. The V0.7 plan is in PROMPT.md (sections 9, 13, 18, 19, 20), docs/roadmap.md and decisions D25, D26, D30, D37, D39, D40, D44, D45, D54-D58, D64 and D65-D69. I attach contexto-fase19.txt with PROMPT.md, STATUS.md, decisions.md, architecture.md, database.md, roadmap.md, package.json, the domain (types, calculations, stats, shots, clubs, holeTargets, geo, gpsLog, weather, format, chartScale, lossRanking), the data layer and `courses.json`, the dashboard (Stats page, useStats, CollapsibleSection, LossBreakdowns, charts), backup and Excel export, and the tests that define stats, shots and weather behaviour.
 >
-> Goal: shot capture on the hole screen. Optional, never blocking; `score` stays the source of truth (D37).
-> - Club buttons from the club bag. One tap = one shot: store the club and a position from the bounded capture window (`startShortCapture`), with `fresh` true/false per D39. Works without GPS permission and offline (shot saved with `fix: null`).
-> - Choosing the putter saves a position marker (D56) and hands over to the existing hole screen; putts stay with the stepper.
-> - List of the hole's shots with edit and delete (`saveHoleShots` replaces the whole list of the hole). Show the reconciliation with `score` (`reconcileHole`) and the distances with ± uncertainty, flagging approximate ones (`withShotDistances`). A mismatch never blocks "Save & next".
-> - The user's club set is exactly the full catalog, which is also the default bag. Decide in the plan whether a bag configuration screen is needed now or can wait; `saveClubBag` already exists.
-> - Show in the restore message of `/rounds` when the club bag was restored (`clubBagRestored`).
-> - Before coding: explain the plan, the files, the flow of the hole screen (one hand, under 10 s per shot), the states (capturing, no permission, offline, capture failed) and how capture runs without blocking autosave. Ask me anything blocking.
-> - Out of scope: live distances to the green and wind (phase 18), analytics (phase 19). The schema is v3: no schema change unless justified (never edit an existing version).
-> - Known limitation: a penalty drop makes the previous shot's distance meaningless (no flag yet).
-> - Pending from phase 15 (optional): front and back of the green, and near/far edges of water (likely D53).
+> Goal: first part of V0.7 in the dashboard. Pure functions in `domain/` first (like phase 10), then UI. Everything with visible sample sizes, never presenting correlation as cause (PROMPT section 18).
+> - Shots: average distance per club (from `withShotDistances`; decide in the plan whether `approximate` distances are excluded or shown separately, and what to do with putter markers and shots after a penalty drop, D57); dispersion left/right relative to the line to the green, derived from the shot fix, the next fix and the green in `courses.json`; distance-to-green bands at the moment of the shot (D64, `distanceToGreenAtShot`) against outcomes (GIR, score to par of the hole).
+> - Weather: effect of wind, temperature and pressure on results and on club distances, using the `weather` table (D44, D45). Group into coarse bands and show the number of rounds/shots per band; flag small samples like `LOW_SAMPLE_HOLES` does today.
+> - Decide in the plan: where it lives in `/stats` (new collapsible sections, same filters of course and 9/18), the minimum sample sizes, how to treat holes or rounds without shots or weather (excluded and counted, never invented), and whether freezing the distance to the green at each shot is worth a schema v4 (D67, D69). Dexie changes always add a new version and extend backup and Excel in the same phase (D38).
+> - Out of scope: strokes gained (V0.6, needs a documented methodology), training recommendations (V0.9), elevation (D35), in-round screens (untouched). The schema is v3: no schema change unless justified (never edit an existing version).
+> - Known limitations: a penalty drop makes the previous shot's distance meaningless, no flag yet (D57); the wind is a grid value (D34); the real-device checks of phases 17 and 18 are in STATUS.md, I will report anything that fails.
 >
-> UI language is Spanish; code, comments and commits in English. Follow section 23 of the prompt and finish with the STATUS.md block and the commit commands.
+> UI language is Spanish; code, comments and commits in English. Work in batches: pure domain pieces and tests first, then hook and screen, then docs. Give me every file in full in the chat (no zip) and finish with the STATUS.md block and the commit commands.
