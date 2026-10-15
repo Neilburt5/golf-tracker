@@ -300,3 +300,38 @@ a.btn-secondary, a.btn-secondary:visited { color: var(--fg); }
 .chart-line { fill: none; stroke: var(--fg); stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
 .chart-dot { fill: var(--fg); stroke: var(--bg); stroke-width: 2; }
 .highlights { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+
+/* ---- Shots (phase 17) ---- */
+.club-grid-wrap { display: flex; flex-direction: column; gap: 10px; }
+.club-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.club-btn {
+  min-height: 64px;
+  padding: 0 8px;
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--fg);
+  background: var(--bg);
+  border: 2px solid var(--fg);
+  border-radius: 12px;
+  cursor: pointer;
+}
+.club-btn:active { background: var(--fg); color: #ffffff; }
+.club-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.club-putter { width: 100%; background: var(--fg); color: #ffffff; font-size: 1.25rem; }
+
+.shot-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.shot-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+}
+.shot-row-editing { border: 2px solid var(--warn); background: var(--warn-bg); }
+.shot-main { display: flex; align-items: baseline; gap: 10px; }
+.shot-number { font-weight: 800; min-width: 1.5rem; }
+.shot-club { font-size: 1.2rem; }
+.shot-distance { margin-left: auto; font-size: 1.1rem; font-weight: 700; }
+.shot-row .btn { min-height: 48px; font-size: 1rem; }

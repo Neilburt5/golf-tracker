@@ -7,6 +7,7 @@ import { NewRound } from './pages/NewRound'
 import { RoundSummary } from './pages/RoundSummary'
 import { Rounds } from './pages/Rounds'
 import { Stats } from './pages/Stats'
+import { ShotCapture } from './pages/ShotCapture'
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
           {/* Hidden test page (phase 13): reached by tapping the build line on Home 5 times. */}
           <Route path="/gps-test" element={<GpsTest />} />
           <Route path="/round/:roundId/hole/:holeNumber" element={<HoleTracking />} />
+          <Route path="/round/:roundId/hole/:holeNumber/shots" element={<ShotCapture />} />
           <Route path="/round/:roundId/summary" element={<RoundSummary />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
