@@ -1,20 +1,32 @@
 import { useState } from 'react';
 import { BigButton } from './BigButton';
 import { clubLabel, isPutter } from '../domain/clubs';
+import { distanceToGreenAtShot, formatTargetDistance } from '../domain/holeTargets';
 import { formatGpsState, formatShotDistance, type FixFailureReason } from '../domain/shotFormat';
 import type { ShotWithDistance } from '../domain/shots';
+import type { CourseHole } from '../domain/types';
 
 interface ShotListProps {
   rows: readonly ShotWithDistance[];
   capturing: readonly string[];
   failures: Readonly<Record<string, FixFailureReason>>;
   editingId: string | null;
+  /** Geometry of this hole, to show the distance to the green at each shot (phase 18, D64). */
+  courseHole?: CourseHole;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
 }
 
 /** The shots of the hole, in order. Deleting asks for an inline confirmation (D20 pattern). */
-export function ShotList({ rows, capturing, failures, editingId, onEdit, onDelete }: ShotListProps) {
+export function ShotList({
+  rows,
+  capturing,
+  failures,
+  editingId,
+  courseHole,
+  onEdit,
+  onDelete,
+}: ShotListProps) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   if (rows.length === 0) {
@@ -31,6 +43,8 @@ export function ShotList({ rows, capturing, failures, editingId, onEdit, onDelet
           failure: failures[shot.id],
         });
         const putter = isPutter(shot.club);
+        // Derived from the shot fix and courses.json; never stored (D64).
+        const toGreen = putter ? null : distanceToGreenAtShot(shot, courseHole);
         const classes = ['shot-row'];
         if (editingId === shot.id) classes.push('shot-row-editing');
 
@@ -44,6 +58,7 @@ export function ShotList({ rows, capturing, failures, editingId, onEdit, onDelet
               </span>
             </div>
             <span className="muted">{gps}</span>
+            {toGreen && <span className="muted">Al green: {formatTargetDistance(toGreen)}</span>}
 
             {confirmingId === shot.id ? (
               <div className="warning" role="alert">

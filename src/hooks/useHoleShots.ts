@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { roundRepository } from '../data/roundRepository';
 import { settingsRepository } from '../data/settingsRepository';
 import { DEFAULT_CLUB_BAG, type ClubCode } from '../domain/clubs';
+import { newestFix } from '../domain/holeTargets';
 import {
   appendShot,
   attachFix,
@@ -17,7 +18,7 @@ import {
   type ShotWithDistance,
 } from '../domain/shots';
 import type { Hole, Round, Shot, ShotInput } from '../domain/types';
-import { startShotCapture } from '../services/shotCapture';
+import { captureCoordinator } from '../services/captureCoordinator';
 
 export type ShotsLoadState = 'loading' | 'ready' | 'not_found' | 'error';
 export type ShotsSaveStatus = 'saved' | 'saving' | 'error';
@@ -32,6 +33,8 @@ function toInput(shot: Shot): ShotInput {
  *   bounded capture ends. GPS never delays or blocks anything (D37).
  * - It has its own write queue and never touches useHoleForm, so hole autosave is unaffected.
  * - Captures are cancelled when the screen is left or the page goes to the background (D41).
+ * - Phase 18: the capture of a club tap goes through the capture coordinator, which cancels
+ *   the live info capture so two captures never compete (D32).
  */
 export function useHoleShots(roundId: string, holeNumber: number) {
   const key = `${roundId}:${holeNumber}`;
@@ -161,7 +164,8 @@ export function useHoleShots(roundId: string, holeNumber: number) {
 
       const id = crypto.randomUUID();
       const generation = generationRef.current;
-      const capture = startShotCapture();
+      // Phase 18: the coordinator cancels the live info capture first, then starts this one.
+      const capture = captureCoordinator.startShot();
       cancelsRef.current.set(id, capture.cancel);
 
       setCapturing((previous) => [...previous, id]);
@@ -216,6 +220,9 @@ export function useHoleShots(roundId: string, holeNumber: number) {
     [hole, shots],
   );
 
+  /** Newest position among the shots of this hole; the live panel reuses it for free (D32). */
+  const lastFix = useMemo(() => newestFix(shots.map((shot) => shot.fix)), [shots]);
+
   return {
     loadState,
     round,
@@ -227,6 +234,7 @@ export function useHoleShots(roundId: string, holeNumber: number) {
     permissionDenied,
     saveStatus,
     reconciliation,
+    lastFix,
     addShot,
     changeClub,
     removeShot,

@@ -2,7 +2,9 @@ import { useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { BigButton, BigLink } from '../components/BigButton';
 import { ClubGrid } from '../components/ClubGrid';
+import { LiveInfoPanel } from '../components/LiveInfoPanel';
 import { ShotList } from '../components/ShotList';
+import { getCourseById } from '../data/courseRepository';
 import { clubLabel, isPutter, type ClubCode } from '../domain/clubs';
 import { formatReconciliation } from '../domain/shotFormat';
 import { useHoleShots, type ShotsSaveStatus } from '../hooks/useHoleShots';
@@ -65,6 +67,10 @@ export function ShotCapture() {
 
   const editing = editingId !== null;
 
+  // Phase 18: geometry of this hole from the bundled courses.json (green, landmarks).
+  const course = shots.round ? getCourseById(shots.round.courseId) : undefined;
+  const courseHole = course?.holes.find((h) => h.number === holeNumber);
+
   const handleClub = (club: ClubCode) => {
     if (editingId !== null) {
       shots.changeClub(editingId, club);
@@ -89,7 +95,13 @@ export function ShotCapture() {
         </div>
       </header>
 
-      {/* Phase 18: distance to the green / landmarks and wind go here. */}
+      <LiveInfoPanel
+        key={holeNumber}
+        courseId={shots.round?.courseId ?? ''}
+        hole={courseHole}
+        coordinates={course?.coordinates}
+        lastShotFix={shots.lastFix}
+      />
 
       {shots.permissionDenied && (
         <div className="warning" role="status">
@@ -133,6 +145,7 @@ export function ShotCapture() {
         capturing={shots.capturing}
         failures={shots.failures}
         editingId={editingId}
+        courseHole={courseHole}
         onEdit={setEditingId}
         onDelete={shots.removeShot}
       />
